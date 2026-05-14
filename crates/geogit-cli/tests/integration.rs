@@ -708,9 +708,9 @@ fn test_restore() {
     assert!(success, "restore failed: {stderr}");
     assert!(stdout.contains("Restored cities"));
 
-    // Verify restored
+    // Verify restored (normalize line endings for cross-platform)
     let restored = fs::read_to_string(&schema_path).unwrap();
-    assert_eq!(restored, original);
+    assert_eq!(restored.replace("\r\n", "\n"), original.replace("\r\n", "\n"));
 }
 
 #[test]

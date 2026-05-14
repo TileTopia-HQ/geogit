@@ -983,9 +983,33 @@ fn cmd_import(source: &str, name: Option<&str>) -> Result<()> {
     if source.starts_with("postgresql://") || source.starts_with("postgres://") {
         return import_postgis(source, name);
     }
-    let (format, path) = source.split_once(':').context(
-        "source must be FORMAT:PATH (e.g. GPKG:data.gpkg, SHP:data.shp) or postgresql://...",
-    )?;
+    let (format, path) = if let Some((f, p)) = source.split_once(':') {
+        if f.len() == 1 && f.chars().next().unwrap_or(' ').is_ascii_alphabetic() && p.starts_with('\\') {
+            // Windows absolute path like C:\foo\bar.gpkg — infer format from extension
+            let pb = Path::new(source);
+            let ext = pb.extension().and_then(|e| e.to_str()).unwrap_or("").to_uppercase();
+            let fmt = match ext.as_str() {
+                "GPKG" => "GPKG",
+                "SHP" => "SHP",
+                _ => return Err(anyhow::anyhow!("cannot infer format from extension '.{ext}'. Use FORMAT:PATH syntax")),
+            };
+            (fmt, source)
+        } else {
+            (f, p)
+        }
+    } else {
+        // No colon — infer from extension
+        let pb = Path::new(source);
+        let ext = pb.extension().and_then(|e| e.to_str()).unwrap_or("").to_uppercase();
+        let fmt = match ext.as_str() {
+            "GPKG" => "GPKG",
+            "SHP" => "SHP",
+            _ => return Err(anyhow::anyhow!(
+                "source must be FORMAT:PATH (e.g. GPKG:data.gpkg, SHP:data.shp) or postgresql://..."
+            )),
+        };
+        (fmt, source)
+    };
     match format.to_uppercase().as_str() {
         "GPKG" => import_gpkg(Path::new(path), name),
         "SHP" | "SHAPEFILE" => import_shapefile(Path::new(path), name),
@@ -2164,8 +2188,27 @@ fn cmd_export(
     };
 
     // Parse destination format
+    // On Windows, skip drive letter (e.g. C:\path) when looking for format prefix
     let (format, path) = if let Some((f, p)) = destination.split_once(':') {
-        (f.to_uppercase(), PathBuf::from(p))
+        if f.len() == 1 && f.chars().next().unwrap_or(' ').is_ascii_alphabetic() && p.starts_with('\\') {
+            // Windows absolute path like C:\foo\bar.csv — infer from extension
+            let p = PathBuf::from(destination);
+            let ext = p
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_uppercase();
+            let fmt = match ext.as_str() {
+                "GPKG" => "GPKG",
+                "SHP" => "SHP",
+                "CSV" => "CSV",
+                "GEOJSON" | "JSON" => "GEOJSON",
+                _ => "GEOJSON",
+            };
+            (fmt.to_string(), p)
+        } else {
+            (f.to_uppercase(), PathBuf::from(p))
+        }
     } else {
         // Infer from extension
         let p = PathBuf::from(destination);
