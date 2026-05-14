@@ -50,8 +50,15 @@ impl<'a> TreeBuilder<'a> {
         std::fs::write(meta_dir.join("path-structure.json"), ps_json)
             .context("write path structure")?;
 
-        // Build legend from current schema
-        let legend = Legend::new(meta.schema.column_ids());
+        // Build legend from non-PK columns (stored features only contain non-PK values)
+        let non_pk_ids: Vec<uuid::Uuid> = meta
+            .schema
+            .0
+            .iter()
+            .filter(|c| c.primary_key_index.is_none())
+            .map(|c| c.id)
+            .collect();
+        let legend = Legend::new(non_pk_ids);
         let legend_hash = legend.hash();
         std::fs::write(legend_dir.join(&legend_hash), legend.to_msgpack())
             .context("write legend")?;

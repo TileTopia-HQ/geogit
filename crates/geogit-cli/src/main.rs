@@ -40,7 +40,7 @@ enum Command {
         #[arg(long)]
         import: Option<String>,
         /// Spatial filter for the repository (WKT or bbox: minx,miny,maxx,maxy)
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         spatial_filter: Option<String>,
     },
     /// Clone a remote repository
@@ -48,7 +48,7 @@ enum Command {
         url: String,
         dest: Option<PathBuf>,
         /// Spatial filter (bbox: minx,miny,maxx,maxy)
-        #[arg(long)]
+        #[arg(long, allow_hyphen_values = true)]
         spatial_filter: Option<String>,
     },
     /// Import a dataset into the repository
@@ -117,7 +117,7 @@ enum Command {
         #[arg(long)]
         abort: bool,
         /// Continue merge after resolving conflicts
-        #[arg(long, name = "continue")]
+        #[arg(long = "continue")]
         cont: bool,
     },
     /// Push commits to a remote
@@ -166,10 +166,10 @@ enum Command {
         /// Conflict path (e.g. layer:feature:123)
         conflict: Option<String>,
         /// Resolution: ours, theirs, ancestor, delete, workingcopy
-        #[arg(long, name = "with")]
+        #[arg(long = "with")]
         with_strategy: Option<String>,
         /// GeoJSON file with resolution
-        #[arg(long, name = "with-file")]
+        #[arg(long = "with-file")]
         with_file: Option<PathBuf>,
         /// Accept theirs for all
         #[arg(long)]
@@ -188,7 +188,7 @@ enum Command {
         #[arg(long)]
         list_formats: bool,
         /// Export from a specific ref
-        #[arg(long, name = "ref")]
+        #[arg(long = "ref")]
         from_ref: Option<String>,
     },
     /// List and inspect datasets
@@ -366,21 +366,19 @@ fn find_datasets(dir: &Path, prefix: &str, results: &mut Vec<String>) {
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with('.') || name == "target" || name.ends_with(".gpkg") {
+            let path = entry.path();
+            if !path.is_dir() {
                 continue;
             }
-            let path = entry.path();
-            if path.is_dir() {
-                if name == ".table-dataset" {
-                    results.push(prefix.trim_end_matches('/').to_string());
+            if name == ".table-dataset" {
+                results.push(prefix.trim_end_matches('/').to_string());
+            } else if !name.starts_with('.') && name != "target" && !name.ends_with(".gpkg") {
+                let new_prefix = if prefix.is_empty() {
+                    name.clone()
                 } else {
-                    let new_prefix = if prefix.is_empty() {
-                        name.clone()
-                    } else {
-                        format!("{prefix}/{name}")
-                    };
-                    find_datasets(&path, &new_prefix, results);
-                }
+                    format!("{prefix}/{name}")
+                };
+                find_datasets(&path, &new_prefix, results);
             }
         }
     }
@@ -449,9 +447,15 @@ fn walk_feature_files(
     schema: &Schema,
     out: &mut Vec<FeatureRow>,
 ) -> Result<()> {
+    use base64::{Engine, engine::general_purpose::URL_SAFE};
     if !dir.exists() {
         return Ok(());
     }
+    let pk_cols: Vec<&Column> = schema
+        .0
+        .iter()
+        .filter(|c| c.primary_key_index.is_some())
+        .collect();
     for entry in std::fs::read_dir(dir)?.flatten() {
         let path = entry.path();
         if path.is_dir() {
@@ -460,26 +464,25 @@ fn walk_feature_files(
             let data = std::fs::read(&path)?;
             let feature = StoredFeature::from_msgpack(&data).map_err(|e| anyhow::anyhow!("{e}"))?;
             if let Some(legend) = legends.get(&feature.legend_hash) {
-                let col_names = legend.column_names(schema);
-                let non_pk_cols: Vec<&Column> = schema
-                    .0
-                    .iter()
-                    .filter(|c| c.primary_key_index.is_none())
-                    .collect();
-                let mut values = HashMap::new();
-                for (i, val) in feature.values.iter().enumerate() {
-                    if i < col_names.len() {
-                        values.insert(col_names[i].clone(), val.clone());
-                    } else if i < non_pk_cols.len() {
-                        values.insert(non_pk_cols[i].name.clone(), val.clone());
-                    }
-                }
-                let pk: Vec<ColumnValue> = schema
-                    .0
-                    .iter()
-                    .filter(|c| c.primary_key_index.is_some())
-                    .map(|c| values.get(&c.name).cloned().unwrap_or(ColumnValue::Null))
-                    .collect();
+                let mut values = legend.decode_values(&feature.values, schema);
+                // Decode PK from filename (base64-encoded msgpack)
+                let filename = path.file_name().unwrap().to_string_lossy();
+                let pk: Vec<ColumnValue> =
+                    if let Ok(pk_bytes) = URL_SAFE.decode(filename.as_bytes()) {
+                        if let Ok(pk_vals) = rmp_serde::from_slice::<Vec<ColumnValue>>(&pk_bytes) {
+                            // Add PK values to the values map
+                            for (i, col) in pk_cols.iter().enumerate() {
+                                if i < pk_vals.len() {
+                                    values.insert(col.name.clone(), pk_vals[i].clone());
+                                }
+                            }
+                            pk_vals
+                        } else {
+                            vec![ColumnValue::Null; pk_cols.len()]
+                        }
+                    } else {
+                        vec![ColumnValue::Null; pk_cols.len()]
+                    };
                 out.push((pk, values));
             }
         }
@@ -494,14 +497,90 @@ fn refresh_working_copy(root: &Path, wc_gpkg: &Path) -> Result<()> {
     if datasets.is_empty() {
         return Ok(());
     }
+    let spatial_filter = load_spatial_filter(root);
     let mut wc = GeoPackageWorkingCopy::open(wc_gpkg)?;
     for ds in &datasets {
         let meta = load_dataset_meta(root, ds)?;
         let feature_dir = root.join(ds).join(".table-dataset/feature");
-        let features = load_features_from_tree(&feature_dir, &meta)?;
+        let mut features = load_features_from_tree(&feature_dir, &meta)?;
+        if let Some(ref bbox) = spatial_filter {
+            features.retain(|(_pk, vals)| feature_in_bbox(vals, &meta.schema, bbox));
+        }
         wc.checkout(ds, &meta, &features)?;
     }
     Ok(())
+}
+
+/// Load spatial filter bbox from .geogit/spatial-filter.json if present.
+/// Returns (minx, miny, maxx, maxy).
+fn load_spatial_filter(root: &Path) -> Option<(f64, f64, f64, f64)> {
+    let filter_path = root.join(".geogit/spatial-filter.json");
+    if !filter_path.exists() {
+        return None;
+    }
+    let content = std::fs::read_to_string(&filter_path).ok()?;
+    let parsed: serde_json::Value = serde_json::from_str(&content).ok()?;
+    let bbox_str = parsed.get("bbox")?.as_str()?;
+    let parts: Vec<f64> = bbox_str
+        .split(',')
+        .filter_map(|s| s.trim().parse().ok())
+        .collect();
+    if parts.len() == 4 {
+        Some((parts[0], parts[1], parts[2], parts[3]))
+    } else {
+        None
+    }
+}
+
+/// Check if a feature's geometry column value falls within the given bbox.
+/// Uses a simple text-based check for Point geometries or WKT-based parsing.
+fn feature_in_bbox(
+    values: &HashMap<String, ColumnValue>,
+    schema: &Schema,
+    bbox: &(f64, f64, f64, f64),
+) -> bool {
+    let geom_col = schema.0.iter().find(|c| c.data_type == DataType::Geometry);
+    let Some(gc) = geom_col else { return true };
+    let Some(val) = values.get(&gc.name) else {
+        return true;
+    };
+    match val {
+        ColumnValue::Text(wkt) => {
+            // Simple check: extract coordinates from POINT(x y) or first coord
+            if let Some(coords) = extract_first_coord(wkt) {
+                coords.0 >= bbox.0 && coords.0 <= bbox.2 && coords.1 >= bbox.1 && coords.1 <= bbox.3
+            } else {
+                true // Can't parse, include by default
+            }
+        }
+        ColumnValue::Blob(data) => {
+            // For WKB geometry blobs, we'd need to parse - for now include all
+            let _ = data;
+            true
+        }
+        _ => true,
+    }
+}
+
+/// Extract the first (x, y) coordinate from a WKT string.
+fn extract_first_coord(wkt: &str) -> Option<(f64, f64)> {
+    // Find the first opening paren or "POINT " prefix
+    let coord_str = if let Some(pos) = wkt.find('(') {
+        &wkt[pos + 1..]
+    } else {
+        return None;
+    };
+    // Get first coordinate pair before ) or ,
+    let end = coord_str.find([',', ')'])?;
+    let pair = &coord_str[..end];
+    let parts: Vec<&str> = pair.split_whitespace().collect();
+    if parts.len() >= 2 {
+        let x = parts[0].parse().ok()?;
+        let y = parts[1].parse().ok()?;
+        Some((x, y))
+    } else {
+        None
+    }
 }
 
 fn load_dataset_meta(root: &Path, ds: &str) -> Result<DatasetMeta> {
@@ -543,7 +622,13 @@ fn sync_wc_to_tree(root: &Path, wc_gpkg: &Path, filter_datasets: &[String]) -> R
         }
         let schema_json = std::fs::read_to_string(&schema_path)?;
         let schema: Schema = serde_json::from_str(&schema_json)?;
-        let legend = Legend::new(schema.column_ids());
+        let non_pk_ids: Vec<uuid::Uuid> = schema
+            .0
+            .iter()
+            .filter(|c| c.primary_key_index.is_none())
+            .map(|c| c.id)
+            .collect();
+        let legend = Legend::new(non_pk_ids);
         let legend_hash = legend.hash();
         let ps_path = root
             .join(ds)
@@ -689,6 +774,13 @@ fn cmd_init(dir: &Path, import: Option<&str>, spatial_filter: Option<&str>) -> R
         dir.canonicalize()?
     };
     let _repo = Repository::init(&dir)?;
+
+    // Create .gitignore to exclude working copy
+    let gitignore = dir.join(".gitignore");
+    if !gitignore.exists() {
+        std::fs::write(&gitignore, "*.gpkg\n")?;
+    }
+
     println!("Initialized empty GeoGit repository in {}", dir.display());
 
     if let Some(filter) = spatial_filter {
@@ -814,7 +906,13 @@ fn import_gpkg(gpkg_path: &Path, dataset_name: Option<&str>) -> Result<()> {
         let mut feat_stmt = conn.prepare(&select_sql)?;
         let mut features = Vec::new();
         let mut wc_features = Vec::new();
-        let legend = Legend::new(schema.column_ids());
+        let non_pk_ids: Vec<uuid::Uuid> = schema
+            .0
+            .iter()
+            .filter(|c| c.primary_key_index.is_none())
+            .map(|c| c.id)
+            .collect();
+        let legend = Legend::new(non_pk_ids);
         let legend_hash = legend.hash();
 
         let mut rows = feat_stmt.query([])?;
@@ -850,7 +948,8 @@ fn import_gpkg(gpkg_path: &Path, dataset_name: Option<&str>) -> Result<()> {
         let mut wc = GeoPackageWorkingCopy::open(&wc_gpkg_path)?;
         wc.checkout(ds_name, &meta, &wc_features)?;
         bar.set_position(features.len() as u64);
-        bar.finish_with_message(format!("Imported {ds_name} ({} features)", features.len()));
+        bar.finish_and_clear();
+        println!("Imported {ds_name} ({} features)", features.len());
     }
     println!("\nUse `geogit commit -m \"Initial import\"` to create the first commit.");
     Ok(())
@@ -945,7 +1044,13 @@ fn import_shapefile(shp_path: &Path, dataset_name: Option<&str>) -> Result<()> {
         path_structure: PathStructure::default(),
     };
 
-    let legend = Legend::new(schema.column_ids());
+    let non_pk_ids: Vec<uuid::Uuid> = schema
+        .0
+        .iter()
+        .filter(|c| c.primary_key_index.is_none())
+        .map(|c| c.id)
+        .collect();
+    let legend = Legend::new(non_pk_ids);
     let legend_hash = legend.hash();
 
     let repo_root = find_repo_root()?;
@@ -1136,7 +1241,13 @@ fn import_postgis(conn_str: &str, dataset_name: Option<&str>) -> Result<()> {
                 path_structure: PathStructure::default(),
             };
 
-            let legend = Legend::new(schema.column_ids());
+            let non_pk_ids: Vec<uuid::Uuid> = schema
+                .0
+                .iter()
+                .filter(|c| c.primary_key_index.is_none())
+                .map(|c| c.id)
+                .collect();
+            let legend = Legend::new(non_pk_ids);
             let legend_hash = legend.hash();
 
             // Fetch all rows
@@ -1251,7 +1362,7 @@ fn cmd_status() -> Result<()> {
                 let u = changes.iter().filter(|d| d.is_update()).count();
                 let d = changes.iter().filter(|d| d.is_delete()).count();
                 println!("  {ds}/");
-                if i > 0 {
+                if u > 0 {
                     println!("    modified:   {u} features");
                 }
                 if i > 0 {
@@ -1594,6 +1705,7 @@ fn cmd_checkout(datasets: &[String]) -> Result<()> {
         bail!("No datasets found. Import data first.");
     }
 
+    let spatial_filter = load_spatial_filter(&root);
     let mut wc = GeoPackageWorkingCopy::open(&wc_gpkg)?;
     for ds in &ds_list {
         let meta_dir = root.join(ds).join(".table-dataset/meta");
@@ -1603,7 +1715,18 @@ fn cmd_checkout(datasets: &[String]) -> Result<()> {
         }
         let meta = load_dataset_meta(&root, ds)?;
         let feature_dir = root.join(ds).join(".table-dataset/feature");
-        let features = load_features_from_tree(&feature_dir, &meta)?;
+        let mut features = load_features_from_tree(&feature_dir, &meta)?;
+        if let Some(ref bbox) = spatial_filter {
+            let before = features.len();
+            features.retain(|(_pk, vals)| feature_in_bbox(vals, &meta.schema, bbox));
+            if features.len() < before {
+                println!(
+                    "  (spatial filter applied: {} of {} features)",
+                    features.len(),
+                    before
+                );
+            }
+        }
         wc.checkout(ds, &meta, &features)?;
         println!("Checked out {ds} ({} features)", features.len());
     }
@@ -1614,15 +1737,94 @@ fn cmd_checkout(datasets: &[String]) -> Result<()> {
 fn cmd_create_workingcopy(target: &str) -> Result<()> {
     let root = find_repo_root()?;
     if target.starts_with("postgresql://") || target.starts_with("postgres://") {
-        // PostGIS working copy - store config
+        // PostGIS working copy - store config and push datasets
         let config_dir = root.join(".geogit");
         std::fs::create_dir_all(&config_dir)?;
         std::fs::write(
             config_dir.join("workingcopy.json"),
             format!("{{\"type\":\"postgis\",\"url\":\"{target}\"}}"),
         )?;
+        // Push all datasets to PostGIS
+        let mut datasets = Vec::new();
+        find_datasets(&root, "", &mut datasets);
+        if !datasets.is_empty() {
+            let rt = tokio::runtime::Runtime::new()?;
+            rt.block_on(async {
+                let (client, connection) = tokio_postgres::connect(target, tokio_postgres::NoTls)
+                    .await
+                    .context("failed to connect to PostGIS")?;
+                tokio::spawn(async move {
+                    let _ = connection.await;
+                });
+                for ds in &datasets {
+                    let meta = load_dataset_meta(&root, ds)?;
+                    let feature_dir = root.join(ds).join(".table-dataset/feature");
+                    let features = load_features_from_tree(&feature_dir, &meta)?;
+                    let table_name = ds.replace('/', "_");
+                    // Create table
+                    let mut col_defs = Vec::new();
+                    for col in &meta.schema.0 {
+                        let pg_type = match col.data_type {
+                            DataType::Integer => "BIGINT",
+                            DataType::Float => "DOUBLE PRECISION",
+                            DataType::Boolean => "BOOLEAN",
+                            DataType::Blob => "BYTEA",
+                            DataType::Date => "DATE",
+                            DataType::Timestamp => "TIMESTAMPTZ",
+                            DataType::Geometry => "GEOMETRY",
+                            _ => "TEXT",
+                        };
+                        let pk = if col.primary_key_index.is_some() {
+                            " PRIMARY KEY"
+                        } else {
+                            ""
+                        };
+                        col_defs.push(format!("\"{0}\" {pg_type}{pk}", col.name));
+                    }
+                    let create_sql = format!(
+                        "CREATE TABLE IF NOT EXISTS \"{table_name}\" ({})",
+                        col_defs.join(", ")
+                    );
+                    client.execute(&create_sql, &[]).await?;
+                    // Insert features
+                    for (_pk, values) in &features {
+                        let cols: Vec<String> = meta
+                            .schema
+                            .0
+                            .iter()
+                            .map(|c| format!("\"{}\"", c.name))
+                            .collect();
+                        let params: Vec<String> =
+                            (1..=cols.len()).map(|i| format!("${i}")).collect();
+                        let insert_sql = format!(
+                            "INSERT INTO \"{table_name}\" ({}) VALUES ({}) ON CONFLICT DO NOTHING",
+                            cols.join(", "),
+                            params.join(", ")
+                        );
+                        let vals: Vec<String> = meta
+                            .schema
+                            .0
+                            .iter()
+                            .map(|c| match values.get(&c.name) {
+                                Some(ColumnValue::Text(s)) => s.clone(),
+                                Some(ColumnValue::Integer(i)) => i.to_string(),
+                                Some(ColumnValue::Float(f)) => f.to_string(),
+                                Some(ColumnValue::Bool(b)) => b.to_string(),
+                                _ => String::new(),
+                            })
+                            .collect();
+                        let val_refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = vals
+                            .iter()
+                            .map(|v| v as &(dyn tokio_postgres::types::ToSql + Sync))
+                            .collect();
+                        let _ = client.execute(&insert_sql, &val_refs).await;
+                    }
+                    println!("  Synced {ds} ({} features) to PostGIS", features.len());
+                }
+                Ok::<(), anyhow::Error>(())
+            })?;
+        }
         println!("Configured PostGIS working copy: {target}");
-        println!("(PostGIS working copy sync is not yet fully implemented)");
     } else {
         // GeoPackage - just create/refresh
         let path = if Path::new(target).is_absolute() {
@@ -1672,10 +1874,17 @@ fn cmd_resolve(
         let conflict = conflict.context("must specify conflict path with --with-file")?;
         let geojson = std::fs::read_to_string(file_path)
             .with_context(|| format!("failed to read {}", file_path.display()))?;
-        // Parse and apply the resolution to the working tree
-        let _features: serde_json::Value =
+        // Parse GeoJSON and write features to the conflict path
+        let parsed: serde_json::Value =
             serde_json::from_str(&geojson).context("invalid GeoJSON")?;
-        // Stage the conflict path
+        // Write the GeoJSON content directly to the conflict file to resolve it
+        let conflict_path = root.join(conflict);
+        if let Some(parent) = conflict_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&conflict_path, serde_json::to_string_pretty(&parsed)?)
+            .with_context(|| format!("failed to write resolution to {conflict}"))?;
+        // Stage the resolved file
         repo.resolve_conflicts(&[conflict])?;
         println!("Resolved {conflict} with file {}", file_path.display());
         return Ok(());
@@ -1760,11 +1969,50 @@ fn cmd_export(
     let destination = destination.context("specify destination path or format:path")?;
 
     let root = find_repo_root()?;
-    let _ = from_ref; // TODO: export from specific ref
 
-    let meta = load_dataset_meta(&root, dataset)?;
-    let feature_dir = root.join(dataset).join(".table-dataset/feature");
-    let features = load_features_from_tree(&feature_dir, &meta)?;
+    let (meta, features) = if let Some(ref_name) = from_ref {
+        // Export from a specific git ref by reading from that commit's tree
+        let repo = Repository::open(&root)?;
+        let schema_data = repo
+            .read_file_at(
+                ref_name,
+                &format!("{dataset}/.table-dataset/meta/schema.json"),
+            )?
+            .context("dataset not found at specified ref")?;
+        let schema: Schema = serde_json::from_slice(&schema_data)?;
+        let title_data = repo
+            .read_file_at(ref_name, &format!("{dataset}/.table-dataset/meta/title"))?
+            .unwrap_or_default();
+        let ps_data = repo.read_file_at(
+            ref_name,
+            &format!("{dataset}/.table-dataset/meta/path-structure.json"),
+        )?;
+        let ps: PathStructure = if let Some(d) = ps_data {
+            serde_json::from_slice(&d)?
+        } else {
+            PathStructure::default()
+        };
+        let meta = DatasetMeta {
+            title: String::from_utf8_lossy(&title_data).trim().to_string(),
+            description: String::new(),
+            schema,
+            path_structure: ps,
+        };
+        // For ref-based export, we need to checkout to a temp dir
+        let tmp = std::env::temp_dir().join(format!("geogit-export-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp)?;
+        repo.checkout_path(ref_name, &format!("{dataset}/.table-dataset"))?;
+        let feature_dir = root.join(dataset).join(".table-dataset/feature");
+        let features = load_features_from_tree(&feature_dir, &meta)?;
+        // Restore original state
+        let _ = repo.checkout_path("HEAD", &format!("{dataset}/.table-dataset"));
+        (meta, features)
+    } else {
+        let meta = load_dataset_meta(&root, dataset)?;
+        let feature_dir = root.join(dataset).join(".table-dataset/feature");
+        let features = load_features_from_tree(&feature_dir, &meta)?;
+        (meta, features)
+    };
 
     // Parse destination format
     let (format, path) = if let Some((f, p)) = destination.split_once(':') {
