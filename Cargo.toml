@@ -1,0 +1,52 @@
+[workspace]
+members = [
+    "crates/geogit-encoding",
+    "crates/geogit-core",
+    "crates/geogit-git",
+    "crates/geogit-wc",
+    "crates/geogit-cli",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/TileTopia-HQ/geogit"
+rust-version = "1.88"
+
+[workspace.dependencies]
+# Encoding
+rmp-serde = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+base64 = "0.22"
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# GeoPackage / SQLite
+rusqlite = { version = "0.34", features = ["bundled", "blob", "functions"] }
+
+# Geometry
+geo = "0.29"
+wkb = "0.7"
+geozero = { version = "0.14", features = ["with-wkb", "with-geo"] }
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Parallelism
+rayon = "1"
+
+# Progress
+indicatif = "0.17"
+
+# Errors
+anyhow = "1"
+thiserror = "2"
+
+# Internal crates
+geogit-encoding = { path = "crates/geogit-encoding" }
+geogit-core = { path = "crates/geogit-core" }
+geogit-git = { path = "crates/geogit-git" }
+geogit-wc = { path = "crates/geogit-wc" }
