@@ -115,6 +115,8 @@ myproject/
 - **Edit anywhere** — working copy is a GeoPackage, editable in any GIS software
 - **Schema evolution** — legends enable reading old features after schema changes
 - **File tracking** — version documents and files alongside geodata
+- **Point clouds** — import and track LAS/LAZ point cloud tiles
+- **Raster datasets** — import and track GeoTIFF raster tiles
 
 ## Supported Formats
 
@@ -126,6 +128,8 @@ myproject/
 | CSV | — | ✅ |
 | PostGIS | ✅ | — |
 | Files (any) | ✅ | ✅ |
+| LAS/LAZ (point cloud) | ✅ | — |
+| GeoTIFF (raster) | ✅ | — |
 
 ## Commands
 
@@ -153,6 +157,8 @@ myproject/
 | `geogit files add\|ls\|rm` | Manage versioned files |
 | `geogit metadata set\|show` | Dataset XML metadata |
 | `geogit license set\|show` | Dataset license management |
+| `geogit pointcloud import\|ls\|info` | Point cloud datasets (LAS/LAZ) |
+| `geogit raster import\|ls\|info` | Raster datasets (GeoTIFF) |
 | `geogit conflicts [ls\|abort]` | View/manage merge conflicts |
 | `geogit resolve [paths]` | Resolve conflicts |
 

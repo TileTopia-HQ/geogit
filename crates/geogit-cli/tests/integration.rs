@@ -1252,3 +1252,260 @@ fn test_metadata_on_file_dataset() {
     assert!(success);
     assert!(stdout.contains("Reports"));
 }
+
+// ─── Point Cloud Tests ───────────────────────────────────────────────────────
+
+/// Create a minimal LAS file for testing.
+fn create_test_las(path: &Path) {
+    use las::header::Builder;
+    use las::point::Format;
+    use las::{Point, Writer};
+
+    let mut builder = Builder::default();
+    builder.point_format = Format::new(0).unwrap();
+    let header = builder.into_header().unwrap();
+    let mut writer = Writer::from_path(path, header).unwrap();
+    let point = Point {
+        x: 1.0,
+        y: 2.0,
+        z: 3.0,
+        ..Default::default()
+    };
+    writer.write_point(point).unwrap();
+    writer.close().unwrap();
+}
+
+#[test]
+fn test_pointcloud_import_and_ls() {
+    let dir = tempdir("pointcloud");
+    let repo = dir.path();
+    run(repo, &["init"]);
+    setup_git_config(repo);
+
+    // Create a test LAS file
+    let las_file = repo.join("test-tile.las");
+    create_test_las(&las_file);
+
+    // Import point cloud
+    let (stdout, stderr, success) = run(
+        repo,
+        &[
+            "pointcloud",
+            "import",
+            "--dataset",
+            "lidar/scan1",
+            las_file.to_str().unwrap(),
+        ],
+    );
+    assert!(success, "pointcloud import failed: {stdout}\n{stderr}");
+    assert!(stdout.contains("imported tile:"));
+    assert!(stdout.contains("1 tile(s)"));
+
+    // Verify dataset structure
+    let ds_dir = repo.join("lidar/scan1/.point-cloud-dataset.v1");
+    assert!(ds_dir.join("meta/title").exists());
+    assert!(ds_dir.join("meta/format.json").exists());
+    assert!(ds_dir.join("meta/schema.json").exists());
+    assert!(ds_dir.join("tile").exists());
+
+    // Check format.json
+    let format: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(ds_dir.join("meta/format.json")).unwrap())
+            .unwrap();
+    assert_eq!(format["compression"], "las");
+    assert_eq!(format["pointDataRecordFormat"], 0);
+
+    // List point cloud datasets
+    let (stdout, _, success) = run(repo, &["pointcloud", "ls"]);
+    assert!(success);
+    assert!(stdout.contains("lidar/scan1"));
+    assert!(stdout.contains("1 tile(s)"));
+
+    // Should appear in data ls too
+    let (stdout, _, success) = run(repo, &["data", "ls"]);
+    assert!(success);
+    assert!(stdout.contains("lidar/scan1 (point cloud)"));
+}
+
+#[test]
+fn test_pointcloud_info() {
+    let dir = tempdir("pointcloud-info");
+    let repo = dir.path();
+    run(repo, &["init"]);
+    setup_git_config(repo);
+
+    let las_file = repo.join("cloud.las");
+    create_test_las(&las_file);
+
+    run(
+        repo,
+        &[
+            "pointcloud",
+            "import",
+            "--dataset",
+            "mycloud",
+            las_file.to_str().unwrap(),
+        ],
+    );
+
+    let (stdout, _, success) = run(repo, &["pointcloud", "info", "mycloud"]);
+    assert!(success);
+    assert!(stdout.contains("Title: mycloud"));
+    assert!(stdout.contains("Format:"));
+    assert!(stdout.contains("Compression: las"));
+    assert!(stdout.contains("Schema:"));
+    assert!(stdout.contains("X: integer(32)"));
+    assert!(stdout.contains("Y: integer(32)"));
+    assert!(stdout.contains("Z: integer(32)"));
+    assert!(stdout.contains("Tiles: 1"));
+}
+
+#[test]
+fn test_pointcloud_info_nonexistent() {
+    let dir = tempdir("pointcloud-noexist");
+    let repo = dir.path();
+    run(repo, &["init"]);
+
+    let (_, stderr, success) = run(repo, &["pointcloud", "info", "nope"]);
+    assert!(!success);
+    assert!(stderr.contains("not found"));
+}
+
+// ─── Raster Tests ────────────────────────────────────────────────────────────
+
+/// Create a minimal TIFF file for testing (2x2 grayscale).
+fn create_test_tiff(path: &Path) {
+    use std::io::BufWriter;
+    use tiff::encoder::TiffEncoder;
+    use tiff::encoder::colortype::Gray8;
+
+    let file = std::fs::File::create(path).unwrap();
+    let buf = BufWriter::new(file);
+    let mut encoder = TiffEncoder::new(buf).unwrap();
+    let data: [u8; 4] = [10, 20, 30, 40];
+    encoder.write_image::<Gray8>(2, 2, &data).unwrap();
+}
+
+#[test]
+fn test_raster_import_and_ls() {
+    let dir = tempdir("raster");
+    let repo = dir.path();
+    run(repo, &["init"]);
+    setup_git_config(repo);
+
+    let tiff_file = repo.join("aerial.tif");
+    create_test_tiff(&tiff_file);
+
+    // Import raster
+    let (stdout, stderr, success) = run(
+        repo,
+        &[
+            "raster",
+            "import",
+            "--dataset",
+            "aerials/north",
+            tiff_file.to_str().unwrap(),
+        ],
+    );
+    assert!(success, "raster import failed: {stdout}\n{stderr}");
+    assert!(stdout.contains("imported tile:"));
+    assert!(stdout.contains("1 tile(s)"));
+
+    // Verify dataset structure
+    let ds_dir = repo.join("aerials/north/.raster-dataset.v1");
+    assert!(ds_dir.join("meta/title").exists());
+    assert!(ds_dir.join("meta/format.json").exists());
+    assert!(ds_dir.join("meta/schema.json").exists());
+    assert!(ds_dir.join("tile").exists());
+
+    // Check format.json
+    let format: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(ds_dir.join("meta/format.json")).unwrap())
+            .unwrap();
+    assert_eq!(format["fileType"], "geotiff");
+
+    // List raster datasets
+    let (stdout, _, success) = run(repo, &["raster", "ls"]);
+    assert!(success);
+    assert!(stdout.contains("aerials/north"));
+    assert!(stdout.contains("1 tile(s)"));
+
+    // Should appear in data ls too
+    let (stdout, _, success) = run(repo, &["data", "ls"]);
+    assert!(success);
+    assert!(stdout.contains("aerials/north (raster)"));
+}
+
+#[test]
+fn test_raster_info() {
+    let dir = tempdir("raster-info");
+    let repo = dir.path();
+    run(repo, &["init"]);
+    setup_git_config(repo);
+
+    let tiff_file = repo.join("dem.tif");
+    create_test_tiff(&tiff_file);
+
+    run(
+        repo,
+        &[
+            "raster",
+            "import",
+            "--dataset",
+            "elevation",
+            tiff_file.to_str().unwrap(),
+        ],
+    );
+
+    let (stdout, _, success) = run(repo, &["raster", "info", "elevation"]);
+    assert!(success);
+    assert!(stdout.contains("Title: elevation"));
+    assert!(stdout.contains("Format:"));
+    assert!(stdout.contains("File Type: geotiff"));
+    assert!(stdout.contains("Schema: 1 band(s)"));
+    assert!(stdout.contains("Band 1: integer(8)"));
+    assert!(stdout.contains("Tiles: 1"));
+}
+
+#[test]
+fn test_raster_info_nonexistent() {
+    let dir = tempdir("raster-noexist");
+    let repo = dir.path();
+    run(repo, &["init"]);
+
+    let (_, stderr, success) = run(repo, &["raster", "info", "nope"]);
+    assert!(!success);
+    assert!(stderr.contains("not found"));
+}
+
+#[test]
+fn test_pointcloud_multiple_tiles() {
+    let dir = tempdir("pointcloud-multi");
+    let repo = dir.path();
+    run(repo, &["init"]);
+    setup_git_config(repo);
+
+    let las1 = repo.join("tile-a.las");
+    let las2 = repo.join("tile-b.las");
+    create_test_las(&las1);
+    create_test_las(&las2);
+
+    let (stdout, _, success) = run(
+        repo,
+        &[
+            "pointcloud",
+            "import",
+            "--dataset",
+            "scan",
+            las1.to_str().unwrap(),
+            las2.to_str().unwrap(),
+        ],
+    );
+    assert!(success);
+    assert!(stdout.contains("2 tile(s)"));
+
+    // Both tiles should be in different shard directories
+    let (stdout, _, success) = run(repo, &["pointcloud", "ls"]);
+    assert!(success);
+    assert!(stdout.contains("2 tile(s)"));
+}

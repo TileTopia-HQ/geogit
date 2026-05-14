@@ -211,6 +211,16 @@ enum Command {
         #[command(subcommand)]
         subcommand: LicenseCommand,
     },
+    /// Manage point cloud datasets (LAS/LAZ)
+    Pointcloud {
+        #[command(subcommand)]
+        subcommand: PointcloudCommand,
+    },
+    /// Manage raster datasets (GeoTIFF)
+    Raster {
+        #[command(subcommand)]
+        subcommand: RasterCommand,
+    },
     /// Manage Git LFS files
     #[command(name = "lfs+")]
     Lfs {
@@ -323,6 +333,46 @@ enum LicenseCommand {
     },
 }
 
+#[derive(Subcommand)]
+enum PointcloudCommand {
+    /// Import LAS/LAZ point cloud files
+    Import {
+        /// Dataset name
+        #[arg(long)]
+        dataset: Option<String>,
+        /// LAS/LAZ files to import
+        files: Vec<PathBuf>,
+    },
+    /// List point cloud datasets
+    #[command(name = "ls")]
+    Ls,
+    /// Show info about a point cloud dataset
+    Info {
+        /// Dataset name
+        dataset: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum RasterCommand {
+    /// Import GeoTIFF raster files
+    Import {
+        /// Dataset name
+        #[arg(long)]
+        dataset: Option<String>,
+        /// GeoTIFF files to import
+        files: Vec<PathBuf>,
+    },
+    /// List raster datasets
+    #[command(name = "ls")]
+    Ls,
+    /// Show info about a raster dataset
+    Info {
+        /// Dataset name
+        dataset: String,
+    },
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
@@ -415,6 +465,20 @@ fn main() -> Result<()> {
         Command::License { subcommand } => match subcommand {
             LicenseCommand::Set { dataset, file } => cmd_license_set(&dataset, &file),
             LicenseCommand::Show { dataset } => cmd_license_show(&dataset),
+        },
+        Command::Pointcloud { subcommand } => match subcommand {
+            PointcloudCommand::Import { dataset, files } => {
+                cmd_pointcloud_import(dataset.as_deref(), &files)
+            }
+            PointcloudCommand::Ls => cmd_pointcloud_ls(),
+            PointcloudCommand::Info { dataset } => cmd_pointcloud_info(&dataset),
+        },
+        Command::Raster { subcommand } => match subcommand {
+            RasterCommand::Import { dataset, files } => {
+                cmd_raster_import(dataset.as_deref(), &files)
+            }
+            RasterCommand::Ls => cmd_raster_ls(),
+            RasterCommand::Info { dataset } => cmd_raster_info(&dataset),
         },
         Command::Lfs { subcommand } => match subcommand {
             LfsCommand::LsFiles { commit, all } => cmd_lfs_ls_files(&commit, all),
@@ -2233,8 +2297,13 @@ fn cmd_data_ls() -> Result<()> {
     find_datasets(&root, "", &mut datasets);
     let mut file_datasets = Vec::new();
     find_file_datasets(&root, "", &mut file_datasets);
+    let mut pc_datasets = Vec::new();
+    find_pointcloud_datasets(&root, "", &mut pc_datasets);
+    let mut raster_datasets = Vec::new();
+    find_raster_datasets(&root, "", &mut raster_datasets);
 
-    if datasets.is_empty() && file_datasets.is_empty() {
+    let total = datasets.len() + file_datasets.len() + pc_datasets.len() + raster_datasets.len();
+    if total == 0 {
         println!("No datasets found.");
     } else {
         for ds in &datasets {
@@ -2243,7 +2312,12 @@ fn cmd_data_ls() -> Result<()> {
         for ds in &file_datasets {
             println!("  {ds} (file)");
         }
-        let total = datasets.len() + file_datasets.len();
+        for ds in &pc_datasets {
+            println!("  {ds} (point cloud)");
+        }
+        for ds in &raster_datasets {
+            println!("  {ds} (raster)");
+        }
         println!("\n{total} dataset(s)");
     }
     Ok(())
@@ -2677,4 +2751,578 @@ fn cmd_license_show(dataset: &str) -> Result<()> {
     }
 
     bail!("no license found for dataset '{dataset}'");
+}
+
+// ─── Point Cloud Dataset Commands ────────────────────────────────────────────
+
+/// Compute the tile path for a given filename using SHA256 sharding.
+/// Strips known extensions, takes first 2 hex chars of SHA256(name) as shard dir.
+fn tile_path(filename: &str, extensions: &[&str]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut name = filename.to_string();
+    for ext in extensions {
+        if name.ends_with(ext) {
+            name = name[..name.len() - ext.len()].to_string();
+            break;
+        }
+    }
+    let hash = Sha256::digest(name.as_bytes());
+    let shard = format!("{:02x}", hash[0]);
+    format!("{shard}/{name}")
+}
+
+fn find_pointcloud_datasets(dir: &Path, prefix: &str, results: &mut Vec<String>) {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            if name == ".point-cloud-dataset.v1" {
+                results.push(prefix.trim_end_matches('/').to_string());
+            } else if !name.starts_with('.') && name != "target" && !name.ends_with(".gpkg") {
+                let new_prefix = if prefix.is_empty() {
+                    name.clone()
+                } else {
+                    format!("{prefix}/{name}")
+                };
+                find_pointcloud_datasets(&path, &new_prefix, results);
+            }
+        }
+    }
+}
+
+fn find_raster_datasets(dir: &Path, prefix: &str, results: &mut Vec<String>) {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            if name == ".raster-dataset.v1" {
+                results.push(prefix.trim_end_matches('/').to_string());
+            } else if !name.starts_with('.') && name != "target" && !name.ends_with(".gpkg") {
+                let new_prefix = if prefix.is_empty() {
+                    name.clone()
+                } else {
+                    format!("{prefix}/{name}")
+                };
+                find_raster_datasets(&path, &new_prefix, results);
+            }
+        }
+    }
+}
+
+fn cmd_pointcloud_import(dataset: Option<&str>, files: &[PathBuf]) -> Result<()> {
+    if files.is_empty() {
+        bail!("no files specified");
+    }
+
+    let root = find_repo_root()?;
+
+    // Determine dataset name from --dataset or first file's stem
+    let ds_name = if let Some(name) = dataset {
+        name.to_string()
+    } else {
+        files[0]
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "pointcloud".to_string())
+    };
+
+    let ds_dir = root.join(&ds_name).join(".point-cloud-dataset.v1");
+    let meta_dir = ds_dir.join("meta");
+    let tile_dir = ds_dir.join("tile");
+    std::fs::create_dir_all(&meta_dir)?;
+    std::fs::create_dir_all(&tile_dir)?;
+
+    // Read the first file to extract metadata
+    let first_file = &files[0];
+    let reader = las::Reader::from_path(first_file)
+        .with_context(|| format!("failed to read LAS file: {}", first_file.display()))?;
+    let header = reader.header();
+
+    // Write meta/title
+    std::fs::write(meta_dir.join("title"), &ds_name)?;
+
+    // Write meta/description
+    std::fs::write(meta_dir.join("description"), "")?;
+
+    // Write meta/format.json
+    let version = header.version();
+    let format = header.point_format();
+    let is_compressed = format.is_compressed;
+    let pdrf = format.to_u8().unwrap_or(0);
+    let point_length = format.len();
+
+    let mut format_json = serde_json::Map::new();
+    format_json.insert(
+        "compression".to_string(),
+        serde_json::Value::String(if is_compressed { "laz" } else { "las" }.to_string()),
+    );
+    format_json.insert(
+        "lasVersion".to_string(),
+        serde_json::Value::String(format!("{}.{}", version.major, version.minor)),
+    );
+    format_json.insert(
+        "pointDataRecordFormat".to_string(),
+        serde_json::Value::Number(serde_json::Number::from(pdrf)),
+    );
+    format_json.insert(
+        "pointDataRecordLength".to_string(),
+        serde_json::Value::Number(serde_json::Number::from(point_length)),
+    );
+    std::fs::write(
+        meta_dir.join("format.json"),
+        serde_json::to_string_pretty(&format_json)?,
+    )?;
+
+    // Write meta/schema.json - build from point format
+    let schema = build_las_schema(format, pdrf);
+    std::fs::write(
+        meta_dir.join("schema.json"),
+        serde_json::to_string_pretty(&schema)?,
+    )?;
+
+    // Write meta/crs.wkt if available
+    if let Some(wkt_bytes) = header.get_wkt_crs_bytes() {
+        let wkt = String::from_utf8_lossy(wkt_bytes);
+        std::fs::write(meta_dir.join("crs.wkt"), wkt.as_ref())?;
+    }
+
+    // Import tiles
+    let pc_extensions = &[".copc.laz", ".laz", ".las"];
+    for file in files {
+        let filename = file
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let tp = tile_path(&filename, pc_extensions);
+        let dest = tile_dir.join(&tp);
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::copy(file, &dest)?;
+        println!("  imported tile: {tp}");
+    }
+
+    // Track with git lfs if available
+    let lfs_pattern = format!("{ds_name}/.point-cloud-dataset.v1/tile/**");
+    let _ = std::process::Command::new("git")
+        .args(["lfs", "track", &lfs_pattern])
+        .current_dir(&root)
+        .output();
+
+    println!(
+        "\nImported {} tile(s) into point cloud dataset '{ds_name}'",
+        files.len()
+    );
+    Ok(())
+}
+
+fn build_las_schema(format: &las::point::Format, pdrf: u8) -> Vec<serde_json::Value> {
+    let mut schema = Vec::new();
+
+    // All PDRFs have X, Y, Z (scaled integers stored as 32-bit)
+    schema.push(serde_json::json!({"name": "X", "dataType": "integer", "size": 32}));
+    schema.push(serde_json::json!({"name": "Y", "dataType": "integer", "size": 32}));
+    schema.push(serde_json::json!({"name": "Z", "dataType": "integer", "size": 32}));
+    schema.push(serde_json::json!({"name": "Intensity", "dataType": "integer", "size": 16, "unsigned": true}));
+
+    if pdrf >= 6 {
+        // Extended format (PDRF 6-10)
+        schema.push(serde_json::json!({"name": "Return Number", "dataType": "integer", "size": 4, "unsigned": true}));
+        schema.push(serde_json::json!({"name": "Number of Returns", "dataType": "integer", "size": 4, "unsigned": true}));
+        schema.push(serde_json::json!({"name": "Synthetic", "dataType": "integer", "size": 1}));
+        schema.push(serde_json::json!({"name": "Key-Point", "dataType": "integer", "size": 1}));
+        schema.push(serde_json::json!({"name": "Withheld", "dataType": "integer", "size": 1}));
+        schema.push(serde_json::json!({"name": "Overlap", "dataType": "integer", "size": 1}));
+        schema.push(serde_json::json!({"name": "Scanner Channel", "dataType": "integer", "size": 2, "unsigned": true}));
+        schema.push(
+            serde_json::json!({"name": "Scan Direction Flag", "dataType": "integer", "size": 1}),
+        );
+        schema.push(
+            serde_json::json!({"name": "Edge of Flight Line", "dataType": "integer", "size": 1}),
+        );
+        schema.push(serde_json::json!({"name": "Classification", "dataType": "integer", "size": 8, "unsigned": true}));
+        schema.push(serde_json::json!({"name": "User Data", "dataType": "integer", "size": 8, "unsigned": true}));
+        schema.push(serde_json::json!({"name": "Scan Angle", "dataType": "integer", "size": 16}));
+        schema.push(serde_json::json!({"name": "Point Source ID", "dataType": "integer", "size": 16, "unsigned": true}));
+    } else {
+        // Legacy format (PDRF 0-5)
+        schema.push(serde_json::json!({"name": "Return Number", "dataType": "integer", "size": 3, "unsigned": true}));
+        schema.push(serde_json::json!({"name": "Number of Returns", "dataType": "integer", "size": 3, "unsigned": true}));
+        schema.push(
+            serde_json::json!({"name": "Scan Direction Flag", "dataType": "integer", "size": 1}),
+        );
+        schema.push(
+            serde_json::json!({"name": "Edge of Flight Line", "dataType": "integer", "size": 1}),
+        );
+        schema.push(serde_json::json!({"name": "Classification", "dataType": "integer", "size": 8, "unsigned": true}));
+        schema
+            .push(serde_json::json!({"name": "Scan Angle Rank", "dataType": "integer", "size": 8}));
+        schema.push(serde_json::json!({"name": "User Data", "dataType": "integer", "size": 8, "unsigned": true}));
+        schema.push(serde_json::json!({"name": "Point Source ID", "dataType": "integer", "size": 16, "unsigned": true}));
+    }
+
+    // GPS Time present in PDRFs 1, 3, 4, 5, 6-10
+    if format.has_gps_time {
+        schema.push(serde_json::json!({"name": "GPS Time", "dataType": "float", "size": 64}));
+    }
+
+    // Color present in PDRFs 2, 3, 5, 7, 8, 10
+    if format.has_color {
+        schema.push(
+            serde_json::json!({"name": "Red", "dataType": "integer", "size": 16, "unsigned": true}),
+        );
+        schema.push(serde_json::json!({"name": "Green", "dataType": "integer", "size": 16, "unsigned": true}));
+        schema.push(serde_json::json!({"name": "Blue", "dataType": "integer", "size": 16, "unsigned": true}));
+    }
+
+    // NIR present in PDRFs 8, 10
+    if format.has_nir {
+        schema.push(serde_json::json!({"name": "Infrared", "dataType": "integer", "size": 16, "unsigned": true}));
+    }
+
+    schema
+}
+
+fn cmd_pointcloud_ls() -> Result<()> {
+    let root = find_repo_root()?;
+    let mut datasets = Vec::new();
+    find_pointcloud_datasets(&root, "", &mut datasets);
+
+    if datasets.is_empty() {
+        println!("No point cloud datasets found.");
+    } else {
+        for ds in &datasets {
+            let tile_dir = root.join(ds).join(".point-cloud-dataset.v1/tile");
+            let tile_count = count_files(&tile_dir);
+            println!("  {ds} ({tile_count} tile(s))");
+        }
+        println!("\n{} point cloud dataset(s)", datasets.len());
+    }
+    Ok(())
+}
+
+fn cmd_pointcloud_info(dataset: &str) -> Result<()> {
+    let root = find_repo_root()?;
+    let ds_dir = root.join(dataset).join(".point-cloud-dataset.v1");
+    if !ds_dir.exists() {
+        bail!("point cloud dataset '{dataset}' not found");
+    }
+
+    let meta_dir = ds_dir.join("meta");
+
+    // Title
+    if let Ok(title) = std::fs::read_to_string(meta_dir.join("title")) {
+        println!("Title: {}", title.trim());
+    }
+
+    // Description
+    if let Ok(desc) = std::fs::read_to_string(meta_dir.join("description")) {
+        let desc = desc.trim();
+        if !desc.is_empty() {
+            println!("Description: {desc}");
+        }
+    }
+
+    // Format
+    if let Ok(format_str) = std::fs::read_to_string(meta_dir.join("format.json"))
+        && let Ok(format) = serde_json::from_str::<serde_json::Value>(&format_str)
+    {
+        println!("Format:");
+        if let Some(compression) = format.get("compression").and_then(|v| v.as_str()) {
+            println!("  Compression: {compression}");
+        }
+        if let Some(version) = format.get("lasVersion").and_then(|v| v.as_str()) {
+            println!("  LAS Version: {version}");
+        }
+        if let Some(pdrf) = format.get("pointDataRecordFormat").and_then(|v| v.as_u64()) {
+            println!("  Point Data Record Format: {pdrf}");
+        }
+        if let Some(len) = format.get("pointDataRecordLength").and_then(|v| v.as_u64()) {
+            println!("  Point Data Record Length: {len}");
+        }
+    }
+
+    // Schema summary
+    if let Ok(schema_str) = std::fs::read_to_string(meta_dir.join("schema.json"))
+        && let Ok(schema) = serde_json::from_str::<Vec<serde_json::Value>>(&schema_str)
+    {
+        println!("Schema: {} field(s)", schema.len());
+        for field in &schema {
+            let name = field.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+            let dt = field
+                .get("dataType")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
+            let size = field.get("size").and_then(|v| v.as_u64()).unwrap_or(0);
+            println!("  {name}: {dt}({size})");
+        }
+    }
+
+    // CRS
+    if let Ok(crs) = std::fs::read_to_string(meta_dir.join("crs.wkt")) {
+        let crs = crs.trim();
+        if !crs.is_empty() {
+            // Show first line of CRS
+            let first_line = crs.lines().next().unwrap_or(crs);
+            println!("CRS: {first_line}");
+        }
+    }
+
+    // Tile count
+    let tile_dir = ds_dir.join("tile");
+    let tile_count = count_files(&tile_dir);
+    println!("Tiles: {tile_count}");
+
+    Ok(())
+}
+
+// ─── Raster Dataset Commands ─────────────────────────────────────────────────
+
+fn cmd_raster_import(dataset: Option<&str>, files: &[PathBuf]) -> Result<()> {
+    if files.is_empty() {
+        bail!("no files specified");
+    }
+
+    let root = find_repo_root()?;
+
+    // Determine dataset name
+    let ds_name = if let Some(name) = dataset {
+        name.to_string()
+    } else {
+        files[0]
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "raster".to_string())
+    };
+
+    let ds_dir = root.join(&ds_name).join(".raster-dataset.v1");
+    let meta_dir = ds_dir.join("meta");
+    let tile_dir = ds_dir.join("tile");
+    std::fs::create_dir_all(&meta_dir)?;
+    std::fs::create_dir_all(&tile_dir)?;
+
+    // Read first file to extract metadata
+    let first_file = &files[0];
+    let f = std::fs::File::open(first_file)
+        .with_context(|| format!("failed to open TIFF: {}", first_file.display()))?;
+    let mut decoder = tiff::decoder::Decoder::new(std::io::BufReader::new(f))
+        .with_context(|| format!("failed to decode TIFF: {}", first_file.display()))?;
+
+    // Write meta/title
+    std::fs::write(meta_dir.join("title"), &ds_name)?;
+
+    // Write meta/description
+    std::fs::write(meta_dir.join("description"), "")?;
+
+    // Write meta/format.json
+    let format_json = serde_json::json!({
+        "fileType": "geotiff"
+    });
+    std::fs::write(
+        meta_dir.join("format.json"),
+        serde_json::to_string_pretty(&format_json)?,
+    )?;
+
+    // Write meta/schema.json from TIFF metadata
+    let schema = build_tiff_schema(&mut decoder)?;
+    std::fs::write(
+        meta_dir.join("schema.json"),
+        serde_json::to_string_pretty(&schema)?,
+    )?;
+
+    // Import tiles
+    let tiff_extensions = &[".tiff", ".tif"];
+    for file in files {
+        let filename = file
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let tp = tile_path(&filename, tiff_extensions);
+        let dest = tile_dir.join(&tp);
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::copy(file, &dest)?;
+        println!("  imported tile: {tp}");
+    }
+
+    // Track with git lfs if available
+    let lfs_pattern = format!("{ds_name}/.raster-dataset.v1/tile/**");
+    let _ = std::process::Command::new("git")
+        .args(["lfs", "track", &lfs_pattern])
+        .current_dir(&root)
+        .output();
+
+    println!(
+        "\nImported {} tile(s) into raster dataset '{ds_name}'",
+        files.len()
+    );
+    Ok(())
+}
+
+fn build_tiff_schema(
+    decoder: &mut tiff::decoder::Decoder<std::io::BufReader<std::fs::File>>,
+) -> Result<Vec<serde_json::Value>> {
+    use tiff::tags::Tag;
+
+    let samples_per_pixel = decoder.get_tag_u32(Tag::SamplesPerPixel).unwrap_or(1);
+
+    let bits_per_sample = decoder
+        .find_tag_unsigned_vec::<u32>(Tag::BitsPerSample)
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| vec![8; samples_per_pixel as usize]);
+
+    let sample_format = decoder
+        .find_tag_unsigned_vec::<u32>(Tag::SampleFormat)
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| vec![1; samples_per_pixel as usize]); // 1 = unsigned int
+
+    let photometric = decoder
+        .find_tag_unsigned::<u32>(Tag::PhotometricInterpretation)
+        .ok()
+        .flatten();
+
+    let mut schema = Vec::new();
+    for i in 0..samples_per_pixel as usize {
+        let bits = *bits_per_sample.get(i).unwrap_or(&8);
+        let sf = *sample_format.get(i).unwrap_or(&1);
+
+        let (data_type, unsigned) = match sf {
+            1 => ("integer", true),  // unsigned integer
+            2 => ("integer", false), // signed integer
+            3 => ("float", false),   // floating point
+            _ => ("integer", true),  // default to unsigned int
+        };
+
+        let mut band = serde_json::Map::new();
+        band.insert(
+            "dataType".to_string(),
+            serde_json::Value::String(data_type.to_string()),
+        );
+        band.insert(
+            "size".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(bits)),
+        );
+
+        if data_type == "integer" && unsigned {
+            band.insert("unsigned".to_string(), serde_json::Value::Bool(true));
+        }
+
+        // Add interpretation based on photometric and band index
+        if let Some(pi) = photometric {
+            let interp = match (pi, i) {
+                (2, 0) => Some("red"), // RGB
+                (2, 1) => Some("green"),
+                (2, 2) => Some("blue"),
+                (2, 3) => Some("alpha"),
+                (3, _) => Some("palette"), // Palette
+                _ => None,
+            };
+            if let Some(interp) = interp {
+                band.insert(
+                    "interpretation".to_string(),
+                    serde_json::Value::String(interp.to_string()),
+                );
+            }
+        }
+
+        schema.push(serde_json::Value::Object(band));
+    }
+
+    Ok(schema)
+}
+
+fn cmd_raster_ls() -> Result<()> {
+    let root = find_repo_root()?;
+    let mut datasets = Vec::new();
+    find_raster_datasets(&root, "", &mut datasets);
+
+    if datasets.is_empty() {
+        println!("No raster datasets found.");
+    } else {
+        for ds in &datasets {
+            let tile_dir = root.join(ds).join(".raster-dataset.v1/tile");
+            let tile_count = count_files(&tile_dir);
+            println!("  {ds} ({tile_count} tile(s))");
+        }
+        println!("\n{} raster dataset(s)", datasets.len());
+    }
+    Ok(())
+}
+
+fn cmd_raster_info(dataset: &str) -> Result<()> {
+    let root = find_repo_root()?;
+    let ds_dir = root.join(dataset).join(".raster-dataset.v1");
+    if !ds_dir.exists() {
+        bail!("raster dataset '{dataset}' not found");
+    }
+
+    let meta_dir = ds_dir.join("meta");
+
+    // Title
+    if let Ok(title) = std::fs::read_to_string(meta_dir.join("title")) {
+        println!("Title: {}", title.trim());
+    }
+
+    // Description
+    if let Ok(desc) = std::fs::read_to_string(meta_dir.join("description")) {
+        let desc = desc.trim();
+        if !desc.is_empty() {
+            println!("Description: {desc}");
+        }
+    }
+
+    // Format
+    if let Ok(format_str) = std::fs::read_to_string(meta_dir.join("format.json"))
+        && let Ok(format) = serde_json::from_str::<serde_json::Value>(&format_str)
+    {
+        println!("Format:");
+        if let Some(ft) = format.get("fileType").and_then(|v| v.as_str()) {
+            println!("  File Type: {ft}");
+        }
+        if let Some(profile) = format.get("profile").and_then(|v| v.as_str()) {
+            println!("  Profile: {profile}");
+        }
+    }
+
+    // Schema summary
+    if let Ok(schema_str) = std::fs::read_to_string(meta_dir.join("schema.json"))
+        && let Ok(schema) = serde_json::from_str::<Vec<serde_json::Value>>(&schema_str)
+    {
+        println!("Schema: {} band(s)", schema.len());
+        for (i, band) in schema.iter().enumerate() {
+            let dt = band.get("dataType").and_then(|v| v.as_str()).unwrap_or("?");
+            let size = band.get("size").and_then(|v| v.as_u64()).unwrap_or(0);
+            let interp = band.get("interpretation").and_then(|v| v.as_str());
+            if let Some(interp) = interp {
+                println!("  Band {}: {dt}({size}) [{interp}]", i + 1);
+            } else {
+                println!("  Band {}: {dt}({size})", i + 1);
+            }
+        }
+    }
+
+    // CRS
+    if let Ok(crs) = std::fs::read_to_string(meta_dir.join("crs.wkt")) {
+        let crs = crs.trim();
+        if !crs.is_empty() {
+            let first_line = crs.lines().next().unwrap_or(crs);
+            println!("CRS: {first_line}");
+        }
+    }
+
+    // Tile count
+    let tile_dir = ds_dir.join("tile");
+    let tile_count = count_files(&tile_dir);
+    println!("Tiles: {tile_count}");
+
+    Ok(())
 }
