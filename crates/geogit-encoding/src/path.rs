@@ -40,8 +40,7 @@ impl Default for PathStructure {
 }
 
 /// URL-safe Base64 alphabet (A-Z, a-z, 0-9, -, _)
-const B64_ALPHABET: &[u8; 64] =
-    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+const B64_ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 impl PathStructure {
     /// Generate the full path for a feature given its primary key values.
@@ -148,9 +147,7 @@ impl PathStructure {
                 (0..self.levels as usize)
                     .map(|i| {
                         let start = i * chunk_size;
-                        chars[start..start + chunk_size]
-                            .iter()
-                            .collect::<String>()
+                        chars[start..start + chunk_size].iter().collect::<String>()
                     })
                     .collect::<Vec<_>>()
                     .join("/")

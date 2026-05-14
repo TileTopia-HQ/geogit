@@ -237,10 +237,7 @@ fn main() -> Result<()> {
         Command::Import { source, name } => cmd_import(&source, name.as_deref()),
         Command::Status => cmd_status(),
         Command::Commit { message } => cmd_commit(&message),
-        Command::Log {
-            oneline,
-            max_count,
-        } => cmd_log(oneline, max_count),
+        Command::Log { oneline, max_count } => cmd_log(oneline, max_count),
         Command::Show { commit } => cmd_show(&commit),
         Command::Diff { base, target, stat } => cmd_diff(&base, target.as_deref(), stat),
         Command::Branch { name, delete } => cmd_branch(name.as_deref(), delete),
@@ -400,9 +397,8 @@ fn import_gpkg(gpkg_path: &Path, dataset_name: Option<&str>) -> Result<()> {
     let conn = Connection::open(&gpkg_path)
         .with_context(|| format!("failed to open GeoPackage: {}", gpkg_path.display()))?;
 
-    let mut stmt = conn.prepare(
-        "SELECT table_name, identifier FROM gpkg_contents WHERE data_type = 'features'",
-    )?;
+    let mut stmt = conn
+        .prepare("SELECT table_name, identifier FROM gpkg_contents WHERE data_type = 'features'")?;
     let tables: Vec<(String, String)> = stmt
         .query_map([], |row| {
             Ok((
@@ -501,10 +497,7 @@ fn import_gpkg(gpkg_path: &Path, dataset_name: Option<&str>) -> Result<()> {
         wc.checkout(ds_name, &meta, &wc_features)?;
 
         bar.set_position(features.len() as u64);
-        bar.finish_with_message(format!(
-            "Imported {ds_name} ({} features)",
-            features.len()
-        ));
+        bar.finish_with_message(format!("Imported {ds_name} ({} features)", features.len()));
     }
 
     println!("\nUse `geogit commit -m \"Initial import\"` to create the first commit.");
@@ -546,40 +539,39 @@ fn read_gpkg_schema(conn: &rusqlite::Connection, table_name: &str) -> Result<Sch
     for row in rows {
         let (name, type_name, pk) = row?;
 
-        let (data_type, geom_type, geom_crs, size) =
-            if let Some((gt, srs_id)) = geom_cols.get(&name) {
-                (
-                    DataType::Geometry,
-                    Some(gt.clone()),
-                    Some(format!("EPSG:{srs_id}")),
-                    None,
-                )
+        let (data_type, geom_type, geom_crs, size) = if let Some((gt, srs_id)) =
+            geom_cols.get(&name)
+        {
+            (
+                DataType::Geometry,
+                Some(gt.clone()),
+                Some(format!("EPSG:{srs_id}")),
+                None,
+            )
+        } else {
+            let upper = type_name.to_uppercase();
+            let dt = if upper.contains("INT") {
+                DataType::Integer
+            } else if upper.contains("REAL") || upper.contains("FLOAT") || upper.contains("DOUBLE")
+            {
+                DataType::Float
+            } else if upper.contains("BLOB") {
+                DataType::Blob
+            } else if upper.contains("BOOL") {
+                DataType::Boolean
             } else {
-                let upper = type_name.to_uppercase();
-                let dt = if upper.contains("INT") {
-                    DataType::Integer
-                } else if upper.contains("REAL")
-                    || upper.contains("FLOAT")
-                    || upper.contains("DOUBLE")
-                {
-                    DataType::Float
-                } else if upper.contains("BLOB") {
-                    DataType::Blob
-                } else if upper.contains("BOOL") {
-                    DataType::Boolean
-                } else {
-                    DataType::Text
-                };
-
-                let size = match dt {
-                    DataType::Integer => Some(64u32),
-                    DataType::Float if upper.contains("REAL") => Some(32),
-                    DataType::Float => Some(64),
-                    _ => None,
-                };
-
-                (dt, None, None, size)
+                DataType::Text
             };
+
+            let size = match dt {
+                DataType::Integer => Some(64u32),
+                DataType::Float if upper.contains("REAL") => Some(32),
+                DataType::Float => Some(64),
+                _ => None,
+            };
+
+            (dt, None, None, size)
+        };
 
         columns.push(Column {
             id: uuid::Uuid::new_v4(),
@@ -698,7 +690,9 @@ fn sync_wc_to_tree(root: &Path, wc_gpkg: &Path) -> Result<()> {
 
         let legend = Legend::new(schema.column_ids());
         let legend_hash = legend.hash();
-        let ps_path = root.join(ds).join(".table-dataset/meta/path-structure.json");
+        let ps_path = root
+            .join(ds)
+            .join(".table-dataset/meta/path-structure.json");
         let ps: PathStructure = if ps_path.exists() {
             serde_json::from_str(&std::fs::read_to_string(&ps_path)?)?
         } else {
@@ -1101,8 +1095,7 @@ fn cmd_checkout(datasets: &[String]) -> Result<()> {
         let schema_json = std::fs::read_to_string(meta_dir.join("schema.json"))?;
         let schema: Schema = serde_json::from_str(&schema_json)?;
         let title = std::fs::read_to_string(meta_dir.join("title")).unwrap_or_default();
-        let description =
-            std::fs::read_to_string(meta_dir.join("description")).unwrap_or_default();
+        let description = std::fs::read_to_string(meta_dir.join("description")).unwrap_or_default();
         let ps: PathStructure = if meta_dir.join("path-structure.json").exists() {
             serde_json::from_str(&std::fs::read_to_string(
                 meta_dir.join("path-structure.json"),
@@ -1131,10 +1124,7 @@ fn cmd_checkout(datasets: &[String]) -> Result<()> {
 /// A feature row: primary key values + column name-value map.
 type FeatureRow = (Vec<ColumnValue>, HashMap<String, ColumnValue>);
 
-fn load_features_from_tree(
-    feature_dir: &Path,
-    meta: &DatasetMeta,
-) -> Result<Vec<FeatureRow>> {
+fn load_features_from_tree(feature_dir: &Path, meta: &DatasetMeta) -> Result<Vec<FeatureRow>> {
     let mut features = Vec::new();
 
     let legend_dir = feature_dir.parent().unwrap().join("meta/legend");
@@ -1396,8 +1386,7 @@ fn refresh_working_copy(root: &Path, wc_gpkg: &Path) -> Result<()> {
         let schema_json = std::fs::read_to_string(meta_dir.join("schema.json"))?;
         let schema: Schema = serde_json::from_str(&schema_json)?;
         let title = std::fs::read_to_string(meta_dir.join("title")).unwrap_or_default();
-        let description =
-            std::fs::read_to_string(meta_dir.join("description")).unwrap_or_default();
+        let description = std::fs::read_to_string(meta_dir.join("description")).unwrap_or_default();
         let ps: PathStructure = if meta_dir.join("path-structure.json").exists() {
             serde_json::from_str(&std::fs::read_to_string(
                 meta_dir.join("path-structure.json"),

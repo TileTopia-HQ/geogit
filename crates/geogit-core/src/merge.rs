@@ -196,7 +196,10 @@ fn classify_conflict(ours: &DeltaKind, theirs: &DeltaKind) -> ConflictType {
 }
 
 fn pk_key(pk: &[ColumnValue]) -> String {
-    pk.iter().map(|v| v.to_string()).collect::<Vec<_>>().join("|")
+    pk.iter()
+        .map(|v| v.to_string())
+        .collect::<Vec<_>>()
+        .join("|")
 }
 
 #[cfg(test)]
@@ -244,6 +247,9 @@ mod tests {
         let result = merge_deltas(&ours, &theirs);
         assert!(result.has_conflicts());
         assert_eq!(result.conflicts.len(), 1);
-        assert_eq!(result.conflicts[0].conflict_type, ConflictType::BothModified);
+        assert_eq!(
+            result.conflicts[0].conflict_type,
+            ConflictType::BothModified
+        );
     }
 }

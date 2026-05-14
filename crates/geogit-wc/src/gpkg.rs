@@ -74,7 +74,9 @@ impl GeoPackageWorkingCopy {
         ).ok();
 
         let tracker = ChangeTracker::new();
-        tracker.init(&conn).context("failed to init change tracker")?;
+        tracker
+            .init(&conn)
+            .context("failed to init change tracker")?;
 
         Ok(Self {
             conn,
@@ -169,10 +171,7 @@ impl WorkingCopy for GeoPackageWorkingCopy {
 
         // Register geometry column
         if let Some(ref geom) = geom_col {
-            let geom_type = geom
-                .geometry_type
-                .as_deref()
-                .unwrap_or("GEOMETRY");
+            let geom_type = geom.geometry_type.as_deref().unwrap_or("GEOMETRY");
             let srs_id: i64 = geom
                 .geometry_crs
                 .as_deref()
@@ -196,7 +195,8 @@ impl WorkingCopy for GeoPackageWorkingCopy {
                 .iter()
                 .map(|c| format!("\"{}\"", c.name))
                 .collect();
-            let placeholders: Vec<String> = (1..=col_names.len()).map(|i| format!("?{i}")).collect();
+            let placeholders: Vec<String> =
+                (1..=col_names.len()).map(|i| format!("?{i}")).collect();
             let insert_sql = format!(
                 "INSERT OR REPLACE INTO \"{}\" ({}) VALUES ({})",
                 table_name,

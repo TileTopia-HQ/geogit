@@ -101,10 +101,7 @@ impl ChangeTracker {
     /// Clear tracked changes for a table (after commit).
     pub fn clear(&self, conn: &Connection, table_name: &str) -> rusqlite::Result<()> {
         conn.execute(
-            &format!(
-                "DELETE FROM {} WHERE table_name = ?1",
-                self.tracking_table
-            ),
+            &format!("DELETE FROM {} WHERE table_name = ?1", self.tracking_table),
             [table_name],
         )?;
         Ok(())

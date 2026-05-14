@@ -80,9 +80,9 @@ impl GpkgGeometry {
 
         let envelope_size = match envelope_type {
             0 => 0,
-            1 => 32, // 4 doubles (minx, maxx, miny, maxy)
+            1 => 32,     // 4 doubles (minx, maxx, miny, maxy)
             2 | 3 => 48, // 6 doubles (+ z or m range)
-            4 => 64, // 8 doubles (+ z and m range)
+            4 => 64,     // 8 doubles (+ z and m range)
             _ => return Err(GeometryError::InvalidEnvelopeType(envelope_type)),
         };
 

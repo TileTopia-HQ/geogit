@@ -176,10 +176,7 @@ impl Repository {
             .context("failed to run git push")?;
 
         if !output.status.success() {
-            bail!(
-                "push failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
+            bail!("push failed: {}", String::from_utf8_lossy(&output.stderr));
         }
         // git push often writes to stderr even on success
         let out = format!(
@@ -203,10 +200,7 @@ impl Repository {
             .context("failed to run git pull")?;
 
         if !output.status.success() {
-            bail!(
-                "pull failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
+            bail!("pull failed: {}", String::from_utf8_lossy(&output.stderr));
         }
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     }
@@ -219,10 +213,7 @@ impl Repository {
             .context("failed to run git clone")?;
 
         if !output.status.success() {
-            bail!(
-                "clone failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
+            bail!("clone failed: {}", String::from_utf8_lossy(&output.stderr));
         }
 
         Ok(Self {
@@ -296,10 +287,7 @@ impl Repository {
             .context("failed to run git show")?;
 
         if !output.status.success() {
-            bail!(
-                "show failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
+            bail!("show failed: {}", String::from_utf8_lossy(&output.stderr));
         }
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
@@ -307,9 +295,7 @@ impl Repository {
     /// Get diff between two tree-ish references (file-level).
     pub fn diff_tree(&self, base: &str, target: &str) -> Result<Vec<DiffEntry>> {
         let output = Command::new("git")
-            .args([
-                "diff", "--name-status", "--no-renames", base, target, "--",
-            ])
+            .args(["diff", "--name-status", "--no-renames", base, target, "--"])
             .current_dir(&self.workdir)
             .output()
             .context("failed to run git diff")?;
@@ -371,10 +357,7 @@ impl Repository {
             .context("failed to run git reset")?;
 
         if !output.status.success() {
-            bail!(
-                "reset failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
+            bail!("reset failed: {}", String::from_utf8_lossy(&output.stderr));
         }
         Ok(())
     }
@@ -465,10 +448,7 @@ impl Repository {
             .context("failed to run git switch")?;
 
         if !output.status.success() {
-            bail!(
-                "switch failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
+            bail!("switch failed: {}", String::from_utf8_lossy(&output.stderr));
         }
         Ok(())
     }

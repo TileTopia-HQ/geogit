@@ -25,11 +25,7 @@ impl<'a> TreeBuilder<'a> {
         meta: &DatasetMeta,
         features: &[(Vec<ColumnValue>, StoredFeature)],
     ) -> Result<()> {
-        let base = self
-            .repo
-            .workdir
-            .join(dataset_path)
-            .join(".table-dataset");
+        let base = self.repo.workdir.join(dataset_path).join(".table-dataset");
         let meta_dir = base.join("meta");
         let feature_dir = base.join("feature");
         let legend_dir = meta_dir.join("legend");
@@ -45,8 +41,7 @@ impl<'a> TreeBuilder<'a> {
             .context("write description")?;
 
         // Write meta/schema.json
-        let schema_json =
-            serde_json::to_string_pretty(&meta.schema).context("serialize schema")?;
+        let schema_json = serde_json::to_string_pretty(&meta.schema).context("serialize schema")?;
         std::fs::write(meta_dir.join("schema.json"), schema_json).context("write schema")?;
 
         // Write meta/path-structure.json
