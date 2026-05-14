@@ -710,7 +710,10 @@ fn test_restore() {
 
     // Verify restored (normalize line endings for cross-platform)
     let restored = fs::read_to_string(&schema_path).unwrap();
-    assert_eq!(restored.replace("\r\n", "\n"), original.replace("\r\n", "\n"));
+    assert_eq!(
+        restored.replace("\r\n", "\n"),
+        original.replace("\r\n", "\n")
+    );
 }
 
 #[test]

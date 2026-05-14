@@ -984,14 +984,25 @@ fn cmd_import(source: &str, name: Option<&str>) -> Result<()> {
         return import_postgis(source, name);
     }
     let (format, path) = if let Some((f, p)) = source.split_once(':') {
-        if f.len() == 1 && f.chars().next().unwrap_or(' ').is_ascii_alphabetic() && p.starts_with('\\') {
+        if f.len() == 1
+            && f.chars().next().unwrap_or(' ').is_ascii_alphabetic()
+            && p.starts_with('\\')
+        {
             // Windows absolute path like C:\foo\bar.gpkg — infer format from extension
             let pb = Path::new(source);
-            let ext = pb.extension().and_then(|e| e.to_str()).unwrap_or("").to_uppercase();
+            let ext = pb
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_uppercase();
             let fmt = match ext.as_str() {
                 "GPKG" => "GPKG",
                 "SHP" => "SHP",
-                _ => return Err(anyhow::anyhow!("cannot infer format from extension '.{ext}'. Use FORMAT:PATH syntax")),
+                _ => {
+                    return Err(anyhow::anyhow!(
+                        "cannot infer format from extension '.{ext}'. Use FORMAT:PATH syntax"
+                    ));
+                }
             };
             (fmt, source)
         } else {
@@ -1000,13 +1011,19 @@ fn cmd_import(source: &str, name: Option<&str>) -> Result<()> {
     } else {
         // No colon — infer from extension
         let pb = Path::new(source);
-        let ext = pb.extension().and_then(|e| e.to_str()).unwrap_or("").to_uppercase();
+        let ext = pb
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_uppercase();
         let fmt = match ext.as_str() {
             "GPKG" => "GPKG",
             "SHP" => "SHP",
-            _ => return Err(anyhow::anyhow!(
-                "source must be FORMAT:PATH (e.g. GPKG:data.gpkg, SHP:data.shp) or postgresql://..."
-            )),
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "source must be FORMAT:PATH (e.g. GPKG:data.gpkg, SHP:data.shp) or postgresql://..."
+                ));
+            }
         };
         (fmt, source)
     };
@@ -2190,7 +2207,10 @@ fn cmd_export(
     // Parse destination format
     // On Windows, skip drive letter (e.g. C:\path) when looking for format prefix
     let (format, path) = if let Some((f, p)) = destination.split_once(':') {
-        if f.len() == 1 && f.chars().next().unwrap_or(' ').is_ascii_alphabetic() && p.starts_with('\\') {
+        if f.len() == 1
+            && f.chars().next().unwrap_or(' ').is_ascii_alphabetic()
+            && p.starts_with('\\')
+        {
             // Windows absolute path like C:\foo\bar.csv — infer from extension
             let p = PathBuf::from(destination);
             let ext = p
