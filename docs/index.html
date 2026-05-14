@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GeoGit — Distributed Version Control for Geospatial Data</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0d1117;--card:#161b22;--border:#30363d;--text:#c9d1d9;--heading:#f0f6fc;--accent:#58a6ff;--accent2:#3fb950;--muted:#8b949e;--red:#f85149}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;line-height:1.6}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+.container{max-width:1100px;margin:0 auto;padding:0 24px}
+header{border-bottom:1px solid var(--border);padding:64px 0 40px;text-align:center}
+header h1{font-size:3.5rem;color:var(--heading);margin-bottom:12px}
+header .tagline{font-size:1.3rem;color:var(--muted);max-width:750px;margin:0 auto}
+.badges{margin-top:20px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.badges img{height:24px}
+.hero{display:flex;gap:16px;justify-content:center;margin-top:28px;flex-wrap:wrap}
+.hero a{background:var(--accent);color:#fff;padding:12px 28px;border-radius:6px;font-weight:600;font-size:1rem;transition:opacity .2s}
+.hero a:hover{text-decoration:none;opacity:.85}
+.hero a.secondary{background:var(--card);border:1px solid var(--border)}
+section{padding:56px 0}
+section h2{font-size:1.9rem;color:var(--heading);margin-bottom:28px;border-bottom:1px solid var(--border);padding-bottom:10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:20px}
+.card h3{color:var(--heading);margin-bottom:8px;font-size:1.1rem}
+.card ul{list-style:none;padding:0;margin:0}
+.card ul li{padding:3px 0;color:var(--text);font-size:.9rem}
+.card ul li::before{content:"✓ ";color:var(--accent2);font-weight:bold}
+code{background:#1c2128;padding:2px 6px;border-radius:4px;font-size:.85em;color:#f0f6fc}
+pre{background:#1c2128;border:1px solid var(--border);border-radius:8px;padding:16px;overflow-x:auto;font-size:.85rem;color:#f0f6fc;margin:12px 0}
+table{width:100%;border-collapse:collapse;margin:12px 0}
+th,td{padding:12px 16px;text-align:left;border-bottom:1px solid var(--border);font-size:.9rem}
+th{color:var(--heading);background:var(--card);position:sticky;top:0}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin-top:24px}
+.stat{text-align:center;padding:20px;background:var(--card);border:1px solid var(--border);border-radius:8px}
+.stat .num{font-size:2rem;color:var(--heading);font-weight:bold}
+.stat .label{color:var(--muted);font-size:.85rem;margin-top:4px}
+footer{border-top:1px solid var(--border);padding:32px 0;text-align:center;color:var(--muted);font-size:.85rem}
+@media(max-width:600px){header h1{font-size:2.2rem}.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+<div class="container">
+<h1>🌍 GeoGit</h1>
+<p class="tagline">Distributed version control for geospatial data — Kart-compatible, written in Rust. Branch, diff, merge, push & pull geodata like code.</p>
+<div class="badges">
+<img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License">
+<img src="https://img.shields.io/badge/Rust-2024-orange" alt="Rust">
+<img src="https://img.shields.io/badge/storage-Git-red" alt="Git Backend">
+<img src="https://img.shields.io/badge/format-Kart--compatible-green" alt="Kart Compatible">
+<img src="https://github.com/TileTopia-HQ/geogit/actions/workflows/ci.yml/badge.svg" alt="CI">
+</div>
+<div class="hero">
+<a href="https://github.com/TileTopia-HQ/geogit">GitHub</a>
+<a href="#quickstart" class="secondary">Quick Start</a>
+<a href="#commands" class="secondary">Commands</a>
+<a href="#architecture" class="secondary">Architecture</a>
+</div>
+<div class="stats">
+<div class="stat"><div class="num">5</div><div class="label">Rust crates</div></div>
+<div class="stat"><div class="num">18</div><div class="label">CLI commands</div></div>
+<div class="stat"><div class="num">3</div><div class="label">Platforms</div></div>
+<div class="stat"><div class="num">∞</div><div class="label">Features tracked</div></div>
+</div>
+</div>
+</header>
+
+<section>
+<div class="container">
+<h2>Features</h2>
+<div class="grid">
+<div class="card">
+<h3>🔀 Git-Native Version Control</h3>
+<ul>
+<li>Real Git repository under the hood</li>
+<li>Branching, merging, rebasing — all standard Git</li>
+<li>Works with GitHub, GitLab, any Git remote</li>
+<li>Full commit history with feature-level diffs</li>
+<li>Three-way merge with conflict detection</li>
+</ul>
+</div>
+<div class="card">
+<h3>📦 Kart-Compatible Storage</h3>
+<ul>
+<li>MessagePack-encoded features</li>
+<li>Legend-based schema evolution</li>
+<li>.table-dataset tree structure</li>
+<li>SHA-256 content-addressed legends</li>
+<li>Integer & msgpack-hash path schemes</li>
+</ul>
+</div>
+<div class="card">
+<h3>🗺️ GeoPackage Working Copy</h3>
+<ul>
+<li>Edit data directly in QGIS or ArcGIS</li>
+<li>SQL trigger-based change tracking</li>
+<li>Automatic sync on commit</li>
+<li>Auto-refresh on switch/merge/pull</li>
+<li>Full GeoPackage metadata tables</li>
+</ul>
+</div>
+<div class="card">
+<h3>🔄 Full Git Workflow</h3>
+<ul>
+<li><code>geogit push</code> / <code>pull</code> to remotes</li>
+<li><code>geogit clone</code> remote repositories</li>
+<li><code>geogit merge</code> with conflict reporting</li>
+<li><code>geogit resolve --theirs/--ours</code></li>
+<li><code>geogit remote add/remove/ls</code></li>
+</ul>
+</div>
+<div class="card">
+<h3>📊 Feature-Level Diffs</h3>
+<ul>
+<li>Per-feature INSERT/UPDATE/DELETE detection</li>
+<li>Column-level change tracking</li>
+<li>Colored terminal output (green/red/yellow)</li>
+<li>Summary statistics (<code>--stat</code>)</li>
+<li>Diff between any two commits</li>
+</ul>
+</div>
+<div class="card">
+<h3>⚡ Performance</h3>
+<ul>
+<li>Written in Rust (zero-cost abstractions)</li>
+<li>SQLite bundled (no external deps)</li>
+<li>Progress bars for long operations</li>
+<li>Parallel-ready architecture (rayon)</li>
+<li>Single static binary</li>
+</ul>
+</div>
+</div>
+</div>
+</section>
+
+<section id="quickstart">
+<div class="container">
+<h2>Quick Start</h2>
+<pre># Install (from source)
+cargo install --path crates/geogit-cli
+
+# Initialize a new repository
+geogit init my-project
+cd my-project
+
+# Import a GeoPackage
+geogit import GPKG:~/data/parcels.gpkg
+
+# Create initial commit
+geogit commit -m "Import parcels dataset"
+
+# Create a branch for edits
+geogit branch feature/update-zoning
+geogit switch feature/update-zoning
+
+# Edit data in QGIS (open the .gpkg file)
+# Then check what changed:
+geogit diff
+geogit status
+
+# Commit and merge
+geogit commit -m "Update zoning classification"
+geogit switch master
+geogit merge feature/update-zoning
+
+# Push to remote
+geogit remote add origin git@github.com:org/geodata.git
+geogit push origin master</pre>
+</div>
+</section>
+
+<section id="commands">
+<div class="container">
+<h2>CLI Commands</h2>
+<table>
+<thead>
+<tr><th>Command</th><th>Description</th></tr>
+</thead>
+<tbody>
+<tr><td><code>geogit init [dir]</code></td><td>Initialize a new GeoGit repository</td></tr>
+<tr><td><code>geogit clone &lt;url&gt;</code></td><td>Clone a remote repository</td></tr>
+<tr><td><code>geogit import GPKG:file.gpkg</code></td><td>Import a GeoPackage dataset</td></tr>
+<tr><td><code>geogit status</code></td><td>Show working copy changes</td></tr>
+<tr><td><code>geogit diff [base] [target]</code></td><td>Feature-level diffs</td></tr>
+<tr><td><code>geogit commit -m "msg"</code></td><td>Commit working copy changes</td></tr>
+<tr><td><code>geogit log [--oneline] [-n N]</code></td><td>Show commit history</td></tr>
+<tr><td><code>geogit show [commit]</code></td><td>Display commit details</td></tr>
+<tr><td><code>geogit branch [name] [-d]</code></td><td>List/create/delete branches</td></tr>
+<tr><td><code>geogit switch &lt;branch&gt; [-c]</code></td><td>Switch branches</td></tr>
+<tr><td><code>geogit merge &lt;branch&gt; [--abort]</code></td><td>Merge a branch</td></tr>
+<tr><td><code>geogit push [remote] [branch]</code></td><td>Push to a remote</td></tr>
+<tr><td><code>geogit pull [remote] [branch]</code></td><td>Pull from a remote</td></tr>
+<tr><td><code>geogit remote add|remove|ls</code></td><td>Manage remotes</td></tr>
+<tr><td><code>geogit reset [target]</code></td><td>Reset working copy to commit</td></tr>
+<tr><td><code>geogit restore &lt;datasets&gt;</code></td><td>Restore datasets from a commit</td></tr>
+<tr><td><code>geogit checkout [datasets]</code></td><td>Checkout tree to working copy</td></tr>
+<tr><td><code>geogit conflicts [ls|abort]</code></td><td>View/manage merge conflicts</td></tr>
+<tr><td><code>geogit resolve [paths]</code></td><td>Resolve conflicts</td></tr>
+<tr><td><code>geogit data ls|info|schema</code></td><td>Inspect datasets</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section id="architecture">
+<div class="container">
+<h2>Architecture</h2>
+<div class="grid">
+<div class="card">
+<h3>geogit-encoding</h3>
+<ul>
+<li>ColumnValue enum (Null, Bool, Integer, Float, Text, Blob)</li>
+<li>Legend: schema evolution via column ID mappings</li>
+<li>StoredFeature: MessagePack encode/decode</li>
+<li>PathStructure: integer & msgpack-hash schemes</li>
+<li>GpkgGeometry: GeoPackage Binary format</li>
+</ul>
+</div>
+<div class="card">
+<h3>geogit-core</h3>
+<ul>
+<li>DatasetMeta: title, description, schema, path structure</li>
+<li>FeatureDelta: Insert/Delete/Update with old/new values</li>
+<li>DiffResult with summary statistics</li>
+<li>Three-way merge with conflict detection</li>
+</ul>
+</div>
+<div class="card">
+<h3>geogit-git</h3>
+<ul>
+<li>Repository: init, open, commit, push, pull, clone</li>
+<li>TreeBuilder: write .table-dataset structures</li>
+<li>Branch operations (create/delete/switch)</li>
+<li>Merge with conflict detection & resolution</li>
+<li>Diff (tree-to-tree and working directory)</li>
+</ul>
+</div>
+<div class="card">
+<h3>geogit-wc</h3>
+<ul>
+<li>WorkingCopy trait (checkout, status, reset)</li>
+<li>GeoPackageWorkingCopy implementation</li>
+<li>ChangeTracker: SQL triggers on INSERT/UPDATE/DELETE</li>
+<li>Automatic tracking table management</li>
+</ul>
+</div>
+<div class="card">
+<h3>geogit-cli</h3>
+<ul>
+<li>18 commands covering full Git+Kart workflow</li>
+<li>Clap-derived argument parsing</li>
+<li>Progress bars (indicatif)</li>
+<li>Colored diff output</li>
+<li>Working copy auto-sync</li>
+</ul>
+</div>
+<div class="card">
+<h3>Storage Format</h3>
+<ul>
+<li>Standard Git repository (any hosting)</li>
+<li><code>dataset/.table-dataset/meta/</code> — schema, legends</li>
+<li><code>dataset/.table-dataset/feature/</code> — msgpack blobs</li>
+<li>Content-addressed legends (SHA-256)</li>
+<li>Compatible with Kart tooling</li>
+</ul>
+</div>
+</div>
+</div>
+</section>
+
+<section>
+<div class="container">
+<h2>Comparison with Kart</h2>
+<table>
+<thead>
+<tr><th>Feature</th><th>GeoGit</th><th>Kart</th></tr>
+</thead>
+<tbody>
+<tr><td>Language</td><td>Rust</td><td>Python + C</td></tr>
+<tr><td>Binary size</td><td>~10 MB (single static)</td><td>~200 MB (bundled Python)</td></tr>
+<tr><td>Storage format</td><td>Kart-compatible</td><td>Kart</td></tr>
+<tr><td>GeoPackage WC</td><td>✓</td><td>✓</td></tr>
+<tr><td>PostGIS WC</td><td>Planned</td><td>✓</td></tr>
+<tr><td>Push/Pull</td><td>✓ (native Git)</td><td>✓</td></tr>
+<tr><td>Feature-level diff</td><td>✓</td><td>✓</td></tr>
+<tr><td>Schema evolution</td><td>✓ (legends)</td><td>✓ (legends)</td></tr>
+<tr><td>Raster support</td><td>Planned</td><td>✓</td></tr>
+<tr><td>Point cloud</td><td>Planned</td><td>✓</td></tr>
+<tr><td>Platforms</td><td>Linux, macOS, Windows</td><td>Linux, macOS, Windows</td></tr>
+<tr><td>License</td><td>AGPL-3.0</td><td>GPL-2.0</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section>
+<div class="container">
+<h2>Build from Source</h2>
+<pre># Requirements: Rust 1.88+, Git
+git clone https://github.com/TileTopia-HQ/geogit.git
+cd geogit
+cargo build --release
+# Binary at target/release/geogit</pre>
+</div>
+</section>
+
+<footer>
+<div class="container">
+<p>GeoGit is open source under the <a href="https://github.com/TileTopia-HQ/geogit/blob/master/LICENSE">AGPL-3.0 license</a>.</p>
+<p style="margin-top:8px">Built by <a href="https://github.com/TileTopia-HQ">TileTopia</a></p>
+</div>
+</footer>
+</body>
+</html>
