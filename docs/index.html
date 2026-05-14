@@ -60,7 +60,7 @@ footer{border-top:1px solid var(--border);padding:32px 0;text-align:center;color
 </div>
 <div class="stats">
 <div class="stat"><div class="num">5</div><div class="label">Rust crates</div></div>
-<div class="stat"><div class="num">18</div><div class="label">CLI commands</div></div>
+<div class="stat"><div class="num">24</div><div class="label">CLI commands</div></div>
 <div class="stat"><div class="num">3</div><div class="label">Platforms</div></div>
 <div class="stat"><div class="num">∞</div><div class="label">Features tracked</div></div>
 </div>
@@ -131,6 +131,26 @@ footer{border-top:1px solid var(--border);padding:32px 0;text-align:center;color
 <li>Single static binary</li>
 </ul>
 </div>
+<div class="card">
+<h3>📁 File & Document Support</h3>
+<ul>
+<li>Version arbitrary files alongside datasets</li>
+<li><code>geogit files add/ls/rm</code> commands</li>
+<li>Organize into named file datasets</li>
+<li>Full Git history for every file</li>
+<li>Metadata and license per file dataset</li>
+</ul>
+</div>
+<div class="card">
+<h3>📋 Metadata & Licensing</h3>
+<ul>
+<li>Attach XML metadata (ISO 19115, FGDC)</li>
+<li>License tracking per dataset</li>
+<li>Version-controlled alongside data</li>
+<li><code>geogit metadata set/show</code></li>
+<li><code>geogit license set/show</code></li>
+</ul>
+</div>
 </div>
 </div>
 </section>
@@ -198,7 +218,11 @@ geogit push origin master</pre>
 <tr><td><code>geogit checkout [datasets]</code></td><td>Checkout tree to working copy</td></tr>
 <tr><td><code>geogit conflicts [ls|abort]</code></td><td>View/manage merge conflicts</td></tr>
 <tr><td><code>geogit resolve [paths]</code></td><td>Resolve conflicts</td></tr>
+<tr><td><code>geogit export &lt;ds&gt; &lt;path&gt;</code></td><td>Export to GPKG/GeoJSON/CSV</td></tr>
 <tr><td><code>geogit data ls|info|schema</code></td><td>Inspect datasets</td></tr>
+<tr><td><code>geogit files add|ls|rm</code></td><td>Manage versioned files</td></tr>
+<tr><td><code>geogit metadata set|show</code></td><td>Dataset XML metadata</td></tr>
+<tr><td><code>geogit license set|show</code></td><td>Dataset license management</td></tr>
 </tbody>
 </table>
 </div>
@@ -249,21 +273,21 @@ geogit push origin master</pre>
 <div class="card">
 <h3>geogit-cli</h3>
 <ul>
-<li>18 commands covering full Git+Kart workflow</li>
+<li>24 commands covering full Git+Kart workflow</li>
 <li>Clap-derived argument parsing</li>
+<li>File datasets & metadata management</li>
 <li>Progress bars (indicatif)</li>
 <li>Colored diff output</li>
-<li>Working copy auto-sync</li>
 </ul>
 </div>
 <div class="card">
 <h3>Storage Format</h3>
 <ul>
 <li>Standard Git repository (any hosting)</li>
-<li><code>dataset/.table-dataset/meta/</code> — schema, legends</li>
-<li><code>dataset/.table-dataset/feature/</code> — msgpack blobs</li>
-<li>Content-addressed legends (SHA-256)</li>
-<li>Compatible with Kart tooling</li>
+<li><code>.table-dataset/</code> — row-level geospatial data</li>
+<li><code>.file-dataset/</code> — versioned documents</li>
+<li><code>meta/metadata.xml</code> — ISO metadata</li>
+<li><code>meta/license</code> — license information</li>
 </ul>
 </div>
 </div>
@@ -282,10 +306,13 @@ geogit push origin master</pre>
 <tr><td>Binary size</td><td>~10 MB (single static)</td><td>~200 MB (bundled Python)</td></tr>
 <tr><td>Storage format</td><td>Kart-compatible</td><td>Kart</td></tr>
 <tr><td>GeoPackage WC</td><td>✓</td><td>✓</td></tr>
-<tr><td>PostGIS WC</td><td>Planned</td><td>✓</td></tr>
+<tr><td>PostGIS WC</td><td>✓</td><td>✓</td></tr>
 <tr><td>Push/Pull</td><td>✓ (native Git)</td><td>✓</td></tr>
 <tr><td>Feature-level diff</td><td>✓</td><td>✓</td></tr>
 <tr><td>Schema evolution</td><td>✓ (legends)</td><td>✓ (legends)</td></tr>
+<tr><td>File datasets</td><td>✓</td><td>Planned</td></tr>
+<tr><td>XML Metadata</td><td>✓</td><td>Planned</td></tr>
+<tr><td>License tracking</td><td>✓</td><td>Planned</td></tr>
 <tr><td>Raster support</td><td>Planned</td><td>✓</td></tr>
 <tr><td>Point cloud</td><td>Planned</td><td>✓</td></tr>
 <tr><td>Platforms</td><td>Linux, macOS, Windows</td><td>Linux, macOS, Windows</td></tr>
