@@ -932,3 +932,323 @@ fn test_full_workflow() {
             || stdout.contains("Merge")
     );
 }
+
+// ─── File Dataset Tests ──────────────────────────────────────────────────────
+
+#[test]
+fn test_files_add_and_ls() {
+    let dir = tempdir("files_add");
+    let repo = dir.path().join("repo");
+    run(dir.path(), &["init", repo.to_str().unwrap()]);
+    setup_git_config(&repo);
+
+    // Create test files
+    let doc = dir.path().join("readme.md");
+    fs::write(&doc, "# Hello\nThis is a document.").unwrap();
+
+    let (stdout, _, success) = run(&repo, &["files", "add", doc.to_str().unwrap()]);
+    assert!(success, "files add should succeed: {stdout}");
+    assert!(stdout.contains("Added: files/readme.md"));
+
+    // List files
+    let (stdout, _, success) = run(&repo, &["files", "ls"]);
+    assert!(success);
+    assert!(stdout.contains("readme.md"));
+
+    // File should exist on disk
+    assert!(repo.join("files/.file-dataset/files/readme.md").exists());
+}
+
+#[test]
+fn test_files_add_custom_dataset() {
+    let dir = tempdir("files_custom");
+    let repo = dir.path().join("repo");
+    run(dir.path(), &["init", repo.to_str().unwrap()]);
+    setup_git_config(&repo);
+
+    let doc = dir.path().join("spec.pdf");
+    fs::write(&doc, "fake PDF content").unwrap();
+
+    let (stdout, _, success) = run(
+        &repo,
+        &[
+            "files",
+            "add",
+            "--dataset",
+            "documents",
+            doc.to_str().unwrap(),
+        ],
+    );
+    assert!(success, "files add with custom dataset: {stdout}");
+    assert!(stdout.contains("Added: documents/spec.pdf"));
+
+    // List only that dataset
+    let (stdout, _, success) = run(&repo, &["files", "ls", "--dataset", "documents"]);
+    assert!(success);
+    assert!(stdout.contains("spec.pdf"));
+}
+
+#[test]
+fn test_files_rm() {
+    let dir = tempdir("files_rm");
+    let repo = dir.path().join("repo");
+    run(dir.path(), &["init", repo.to_str().unwrap()]);
+    setup_git_config(&repo);
+
+    let doc = dir.path().join("temp.txt");
+    fs::write(&doc, "temporary").unwrap();
+    run(&repo, &["files", "add", doc.to_str().unwrap()]);
+
+    let (stdout, _, success) = run(&repo, &["files", "rm", "temp.txt"]);
+    assert!(success, "files rm should succeed: {stdout}");
+    assert!(stdout.contains("Removed: files/temp.txt"));
+
+    // File should be gone
+    assert!(!repo.join("files/.file-dataset/files/temp.txt").exists());
+}
+
+#[test]
+fn test_files_commit_and_version() {
+    let dir = tempdir("files_version");
+    let repo = dir.path().join("repo");
+    run(dir.path(), &["init", repo.to_str().unwrap()]);
+    setup_git_config(&repo);
+
+    let doc = dir.path().join("notes.txt");
+    fs::write(&doc, "Version 1").unwrap();
+    run(&repo, &["files", "add", doc.to_str().unwrap()]);
+
+    let (_, _, success) = run(&repo, &["commit", "-m", "Add notes"]);
+    assert!(success);
+
+    // Update the file
+    fs::write(
+        repo.join("files/.file-dataset/files/notes.txt"),
+        "Version 2",
+    )
+    .unwrap();
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(&repo)
+        .output()
+        .unwrap();
+    let (_, _, success) = run(&repo, &["commit", "-m", "Update notes"]);
+    assert!(success);
+
+    // Log should show both commits
+    let (stdout, _, _) = run(&repo, &["log", "--oneline"]);
+    assert!(stdout.contains("Add notes"));
+    assert!(stdout.contains("Update notes"));
+}
+
+#[test]
+fn test_files_in_data_ls() {
+    let dir = tempdir("files_data_ls");
+    let repo = dir.path().join("repo");
+    run(dir.path(), &["init", repo.to_str().unwrap()]);
+    setup_git_config(&repo);
+
+    let doc = dir.path().join("doc.txt");
+    fs::write(&doc, "content").unwrap();
+    run(&repo, &["files", "add", doc.to_str().unwrap()]);
+
+    let (stdout, _, success) = run(&repo, &["data", "ls"]);
+    assert!(success);
+    assert!(stdout.contains("files (file)"));
+}
+
+// ─── Metadata Tests ──────────────────────────────────────────────────────────
+
+#[test]
+fn test_metadata_set_and_show() {
+    let dir = tempdir("metadata");
+    let repo = dir.path().join("repo");
+    run(dir.path(), &["init", repo.to_str().unwrap()]);
+    setup_git_config(&repo);
+
+    // Import a dataset
+    let gpkg = dir.path().join("data.gpkg");
+    create_test_gpkg(&gpkg);
+    run(&repo, &["import", &format!("GPKG:{}", gpkg.display())]);
+
+    // Create XML metadata file
+    let meta_file = dir.path().join("metadata.xml");
+    fs::write(
+        &meta_file,
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<gmd:MD_Metadata xmlns:gmd="http://www.isotc211.org/2005/gmd">
+  <gmd:identificationInfo>
+    <gmd:title>Cities of the World</gmd:title>
+  </gmd:identificationInfo>
+</gmd:MD_Metadata>"#,
+    )
+    .unwrap();
+
+    // Set metadata
+    let (stdout, _, success) = run(
+        &repo,
+        &["metadata", "set", "cities", meta_file.to_str().unwrap()],
+    );
+    assert!(success, "metadata set should succeed: {stdout}");
+    assert!(stdout.contains("Metadata set"));
+
+    // Show metadata
+    let (stdout, _, success) = run(&repo, &["metadata", "show", "cities"]);
+    assert!(success);
+    assert!(stdout.contains("MD_Metadata"));
+    assert!(stdout.contains("Cities of the World"));
+
+    // data info should show has metadata
+    let (stdout, _, _) = run(&repo, &["data", "info", "cities"]);
+    assert!(stdout.contains("Has metadata: yes"));
+}
+
+#[test]
+fn test_metadata_invalid_xml() {
+    let dir = tempdir("metadata_invalid");
+    let repo = dir.path().join("repo");
+    run(dir.path(), &["init", repo.to_str().unwrap()]);
+    setup_git_config(&repo);
+
+    let gpkg = dir.path().join("data.gpkg");
+    create_test_gpkg(&gpkg);
+    run(&repo, &["import", &format!("GPKG:{}", gpkg.display())]);
+
+    let bad_file = dir.path().join("not_xml.txt");
+    fs::write(&bad_file, "This is not XML at all").unwrap();
+
+    let (_, _, success) = run(
+        &repo,
+        &["metadata", "set", "cities", bad_file.to_str().unwrap()],
+    );
+    assert!(!success, "should reject non-XML content");
+}
+
+#[test]
+fn test_metadata_nonexistent_dataset() {
+    let dir = tempdir("metadata_nodata");
+    let repo = dir.path().join("repo");
+    run(dir.path(), &["init", repo.to_str().unwrap()]);
+    setup_git_config(&repo);
+
+    let meta_file = dir.path().join("m.xml");
+    fs::write(&meta_file, "<root/>").unwrap();
+
+    let (_, _, success) = run(
+        &repo,
+        &["metadata", "set", "nope", meta_file.to_str().unwrap()],
+    );
+    assert!(!success, "should fail for nonexistent dataset");
+}
+
+// ─── License Tests ───────────────────────────────────────────────────────────
+
+#[test]
+fn test_license_set_and_show_text() {
+    let dir = tempdir("license_text");
+    let repo = dir.path().join("repo");
+    run(dir.path(), &["init", repo.to_str().unwrap()]);
+    setup_git_config(&repo);
+
+    let gpkg = dir.path().join("data.gpkg");
+    create_test_gpkg(&gpkg);
+    run(&repo, &["import", &format!("GPKG:{}", gpkg.display())]);
+
+    let license_file = dir.path().join("LICENSE.txt");
+    fs::write(
+        &license_file,
+        "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+    )
+    .unwrap();
+
+    let (stdout, _, success) = run(
+        &repo,
+        &["license", "set", "cities", license_file.to_str().unwrap()],
+    );
+    assert!(success, "license set should succeed: {stdout}");
+    assert!(stdout.contains("License set"));
+
+    let (stdout, _, success) = run(&repo, &["license", "show", "cities"]);
+    assert!(success);
+    assert!(stdout.contains("CC BY 4.0"));
+
+    // data info should show has license
+    let (stdout, _, _) = run(&repo, &["data", "info", "cities"]);
+    assert!(stdout.contains("Has license: yes"));
+}
+
+#[test]
+fn test_license_set_xml() {
+    let dir = tempdir("license_xml");
+    let repo = dir.path().join("repo");
+    run(dir.path(), &["init", repo.to_str().unwrap()]);
+    setup_git_config(&repo);
+
+    let gpkg = dir.path().join("data.gpkg");
+    create_test_gpkg(&gpkg);
+    run(&repo, &["import", &format!("GPKG:{}", gpkg.display())]);
+
+    let license_xml = dir.path().join("license.xml");
+    fs::write(
+        &license_xml,
+        r#"<?xml version="1.0"?>
+<license>
+  <name>ODbL</name>
+  <url>https://opendatacommons.org/licenses/odbl/</url>
+</license>"#,
+    )
+    .unwrap();
+
+    let (_, _, success) = run(
+        &repo,
+        &["license", "set", "cities", license_xml.to_str().unwrap()],
+    );
+    assert!(success);
+
+    // Should be stored as license.xml (not license)
+    assert!(repo.join("cities/.table-dataset/meta/license.xml").exists());
+
+    let (stdout, _, _) = run(&repo, &["license", "show", "cities"]);
+    assert!(stdout.contains("ODbL"));
+}
+
+#[test]
+fn test_license_nonexistent_dataset() {
+    let dir = tempdir("license_nodata");
+    let repo = dir.path().join("repo");
+    run(dir.path(), &["init", repo.to_str().unwrap()]);
+    setup_git_config(&repo);
+
+    let f = dir.path().join("l.txt");
+    fs::write(&f, "MIT").unwrap();
+
+    let (_, _, success) = run(&repo, &["license", "set", "nope", f.to_str().unwrap()]);
+    assert!(!success, "should fail for nonexistent dataset");
+}
+
+#[test]
+fn test_metadata_on_file_dataset() {
+    let dir = tempdir("meta_file_ds");
+    let repo = dir.path().join("repo");
+    run(dir.path(), &["init", repo.to_str().unwrap()]);
+    setup_git_config(&repo);
+
+    // Add a file to create the dataset
+    let doc = dir.path().join("report.pdf");
+    fs::write(&doc, "PDF content").unwrap();
+    run(&repo, &["files", "add", doc.to_str().unwrap()]);
+
+    // Set metadata on the file dataset
+    let meta_file = dir.path().join("meta.xml");
+    fs::write(&meta_file, "<dataset><name>Reports</name></dataset>").unwrap();
+
+    let (stdout, _, success) = run(
+        &repo,
+        &["metadata", "set", "files", meta_file.to_str().unwrap()],
+    );
+    assert!(success, "metadata set on file dataset: {stdout}");
+
+    let (stdout, _, success) = run(&repo, &["metadata", "show", "files"]);
+    assert!(success);
+    assert!(stdout.contains("Reports"));
+}

@@ -196,6 +196,21 @@ enum Command {
         #[command(subcommand)]
         subcommand: DataCommand,
     },
+    /// Manage versioned files alongside datasets
+    Files {
+        #[command(subcommand)]
+        subcommand: FilesCommand,
+    },
+    /// Manage dataset XML metadata
+    Metadata {
+        #[command(subcommand)]
+        subcommand: MetadataCommand,
+    },
+    /// Manage dataset license information
+    License {
+        #[command(subcommand)]
+        subcommand: LicenseCommand,
+    },
     /// Manage Git LFS files
     #[command(name = "lfs+")]
     Lfs {
@@ -247,6 +262,65 @@ enum LfsCommand {
     Fetch { commits: Vec<String> },
     /// Clean up unused LFS files
     Gc,
+}
+
+#[derive(Subcommand)]
+enum FilesCommand {
+    /// Add files to a file dataset
+    Add {
+        /// Dataset name for the file group
+        #[arg(long, default_value = "files")]
+        dataset: String,
+        /// Files to add
+        paths: Vec<PathBuf>,
+    },
+    /// List tracked files
+    #[command(name = "ls")]
+    Ls {
+        /// Dataset name
+        #[arg(long)]
+        dataset: Option<String>,
+    },
+    /// Remove a tracked file
+    Rm {
+        /// Dataset name
+        #[arg(long, default_value = "files")]
+        dataset: String,
+        /// File paths to remove
+        paths: Vec<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
+enum MetadataCommand {
+    /// Set XML metadata for a dataset
+    Set {
+        /// Dataset name
+        dataset: String,
+        /// Path to XML metadata file
+        file: PathBuf,
+    },
+    /// Show metadata for a dataset
+    Show {
+        /// Dataset name
+        dataset: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum LicenseCommand {
+    /// Set license for a dataset
+    Set {
+        /// Dataset name
+        dataset: String,
+        /// Path to license file (text or XML)
+        file: PathBuf,
+    },
+    /// Show license for a dataset
+    Show {
+        /// Dataset name
+        dataset: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -328,6 +402,19 @@ fn main() -> Result<()> {
             DataCommand::Ls => cmd_data_ls(),
             DataCommand::Info { dataset } => cmd_data_info(&dataset),
             DataCommand::Schema { dataset } => cmd_data_schema(&dataset),
+        },
+        Command::Files { subcommand } => match subcommand {
+            FilesCommand::Add { dataset, paths } => cmd_files_add(&dataset, &paths),
+            FilesCommand::Ls { dataset } => cmd_files_ls(dataset.as_deref()),
+            FilesCommand::Rm { dataset, paths } => cmd_files_rm(&dataset, &paths),
+        },
+        Command::Metadata { subcommand } => match subcommand {
+            MetadataCommand::Set { dataset, file } => cmd_metadata_set(&dataset, &file),
+            MetadataCommand::Show { dataset } => cmd_metadata_show(&dataset),
+        },
+        Command::License { subcommand } => match subcommand {
+            LicenseCommand::Set { dataset, file } => cmd_license_set(&dataset, &file),
+            LicenseCommand::Show { dataset } => cmd_license_show(&dataset),
         },
         Command::Lfs { subcommand } => match subcommand {
             LfsCommand::LsFiles { commit, all } => cmd_lfs_ls_files(&commit, all),
@@ -2146,19 +2233,51 @@ fn cmd_data_ls() -> Result<()> {
     let root = find_repo_root()?;
     let mut datasets = Vec::new();
     find_datasets(&root, "", &mut datasets);
-    if datasets.is_empty() {
+    let mut file_datasets = Vec::new();
+    find_file_datasets(&root, "", &mut file_datasets);
+
+    if datasets.is_empty() && file_datasets.is_empty() {
         println!("No datasets found.");
     } else {
         for ds in &datasets {
-            println!("  {ds}");
+            println!("  {ds} (table)");
         }
-        println!("\n{} dataset(s)", datasets.len());
+        for ds in &file_datasets {
+            println!("  {ds} (file)");
+        }
+        let total = datasets.len() + file_datasets.len();
+        println!("\n{total} dataset(s)");
     }
     Ok(())
 }
 
 fn cmd_data_info(dataset: &str) -> Result<()> {
     let root = find_repo_root()?;
+
+    // Check for file dataset first
+    let file_meta_dir = root.join(dataset).join(".file-dataset/meta");
+    if file_meta_dir.exists() {
+        let title = std::fs::read_to_string(file_meta_dir.join("title")).unwrap_or_default();
+        let description =
+            std::fs::read_to_string(file_meta_dir.join("description")).unwrap_or_default();
+        let files_dir = root.join(dataset).join(".file-dataset/files");
+        let count = count_files(&files_dir);
+        println!("Dataset: {dataset}");
+        println!("Type: file");
+        println!("Title: {}", title.trim());
+        if !description.trim().is_empty() {
+            println!("Description: {}", description.trim());
+        }
+        println!("Files: {count}");
+        if file_meta_dir.join("metadata.xml").exists() {
+            println!("Has metadata: yes");
+        }
+        if file_meta_dir.join("license").exists() || file_meta_dir.join("license.xml").exists() {
+            println!("Has license: yes");
+        }
+        return Ok(());
+    }
+
     let meta_dir = root.join(dataset).join(".table-dataset/meta");
     if !meta_dir.exists() {
         bail!("dataset '{dataset}' not found");
@@ -2169,6 +2288,7 @@ fn cmd_data_info(dataset: &str) -> Result<()> {
     let count = count_files(&feature_dir);
 
     println!("Dataset: {dataset}");
+    println!("Type: table");
     println!("Title: {}", meta.title);
     if !meta.description.is_empty() {
         println!("Description: {}", meta.description);
@@ -2193,6 +2313,12 @@ fn cmd_data_info(dataset: &str) -> Result<()> {
                 col.geometry_crs.as_deref().unwrap_or("unknown CRS")
             );
         }
+    }
+    if meta_dir.join("metadata.xml").exists() {
+        println!("Has metadata: yes");
+    }
+    if meta_dir.join("license").exists() || meta_dir.join("license.xml").exists() {
+        println!("Has license: yes");
     }
     Ok(())
 }
@@ -2281,4 +2407,276 @@ fn cmd_lfs_gc() -> Result<()> {
     print!("{}", String::from_utf8_lossy(&output.stdout));
     print!("{}", String::from_utf8_lossy(&output.stderr));
     Ok(())
+}
+
+// ─── File Dataset Commands ───────────────────────────────────────────────────
+
+fn cmd_files_add(dataset: &str, paths: &[PathBuf]) -> Result<()> {
+    let root = find_repo_root()?;
+    let ds_dir = root.join(dataset).join(".file-dataset");
+    let files_dir = ds_dir.join("files");
+    std::fs::create_dir_all(&files_dir)?;
+
+    // Create meta directory with basic info
+    let meta_dir = ds_dir.join("meta");
+    std::fs::create_dir_all(&meta_dir)?;
+    if !meta_dir.join("title").exists() {
+        std::fs::write(meta_dir.join("title"), dataset)?;
+    }
+    if !meta_dir.join("description").exists() {
+        std::fs::write(meta_dir.join("description"), "")?;
+    }
+
+    for path in paths {
+        let abs_path = if path.is_relative() {
+            std::env::current_dir()?.join(path)
+        } else {
+            path.to_path_buf()
+        };
+        if !abs_path.exists() {
+            bail!("file not found: {}", abs_path.display());
+        }
+        let filename = abs_path
+            .file_name()
+            .context("invalid file path")?
+            .to_string_lossy()
+            .to_string();
+        let dest = files_dir.join(&filename);
+        std::fs::copy(&abs_path, &dest)
+            .with_context(|| format!("failed to copy {}", abs_path.display()))?;
+        println!("Added: {dataset}/{filename}");
+    }
+
+    // Track with git
+    std::process::Command::new("git")
+        .args(["add", &format!("{dataset}/.file-dataset")])
+        .current_dir(&root)
+        .output()?;
+
+    Ok(())
+}
+
+fn cmd_files_ls(dataset: Option<&str>) -> Result<()> {
+    let root = find_repo_root()?;
+
+    let datasets = if let Some(ds) = dataset {
+        vec![ds.to_string()]
+    } else {
+        // Find all file datasets
+        let mut results = Vec::new();
+        find_file_datasets(&root, "", &mut results);
+        results
+    };
+
+    if datasets.is_empty() {
+        println!("No file datasets found.");
+        return Ok(());
+    }
+
+    for ds in &datasets {
+        let files_dir = root.join(ds).join(".file-dataset/files");
+        if !files_dir.exists() {
+            continue;
+        }
+        println!("{ds}/");
+        if let Ok(entries) = std::fs::read_dir(&files_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                let meta = entry.metadata()?;
+                let size = meta.len();
+                let size_str = format_file_size(size);
+                println!("  {name}  ({size_str})");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn cmd_files_rm(dataset: &str, paths: &[PathBuf]) -> Result<()> {
+    let root = find_repo_root()?;
+    let files_dir = root.join(dataset).join(".file-dataset/files");
+    if !files_dir.exists() {
+        bail!("file dataset '{dataset}' not found");
+    }
+
+    for path in paths {
+        let filename = path
+            .file_name()
+            .unwrap_or(path.as_os_str())
+            .to_string_lossy()
+            .to_string();
+        let target = files_dir.join(&filename);
+        if target.exists() {
+            std::fs::remove_file(&target)?;
+            println!("Removed: {dataset}/{filename}");
+        } else {
+            println!("Not found: {dataset}/{filename}");
+        }
+    }
+
+    // Stage removal in git
+    std::process::Command::new("git")
+        .args(["add", &format!("{dataset}/.file-dataset")])
+        .current_dir(&root)
+        .output()?;
+
+    Ok(())
+}
+
+fn find_file_datasets(dir: &Path, prefix: &str, results: &mut Vec<String>) {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            if name == ".file-dataset" {
+                results.push(prefix.trim_end_matches('/').to_string());
+            } else if !name.starts_with('.') && name != "target" && !name.ends_with(".gpkg") {
+                let new_prefix = if prefix.is_empty() {
+                    name.clone()
+                } else {
+                    format!("{prefix}/{name}")
+                };
+                find_file_datasets(&path, &new_prefix, results);
+            }
+        }
+    }
+}
+
+fn format_file_size(bytes: u64) -> String {
+    if bytes < 1024 {
+        format!("{bytes} B")
+    } else if bytes < 1024 * 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else if bytes < 1024 * 1024 * 1024 {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    } else {
+        format!("{:.2} GB", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
+    }
+}
+
+// ─── Metadata Commands ───────────────────────────────────────────────────────
+
+fn cmd_metadata_set(dataset: &str, file: &Path) -> Result<()> {
+    let root = find_repo_root()?;
+    let meta_dir = root.join(dataset).join(".table-dataset/meta");
+    if !meta_dir.exists() {
+        // Check for file dataset
+        let file_meta = root.join(dataset).join(".file-dataset/meta");
+        if file_meta.exists() {
+            let content = std::fs::read_to_string(file)
+                .with_context(|| format!("failed to read {}", file.display()))?;
+            std::fs::write(file_meta.join("metadata.xml"), &content)?;
+            println!("Metadata set for dataset '{dataset}'");
+            std::process::Command::new("git")
+                .args(["add", &format!("{dataset}/.file-dataset/meta/metadata.xml")])
+                .current_dir(&root)
+                .output()?;
+            return Ok(());
+        }
+        bail!("dataset '{dataset}' not found");
+    }
+
+    let content = std::fs::read_to_string(file)
+        .with_context(|| format!("failed to read {}", file.display()))?;
+
+    // Validate XML minimally (check for opening tag)
+    if !content.trim_start().starts_with('<') {
+        bail!("file does not appear to be valid XML");
+    }
+
+    std::fs::write(meta_dir.join("metadata.xml"), &content)?;
+    println!("Metadata set for dataset '{dataset}'");
+
+    std::process::Command::new("git")
+        .args([
+            "add",
+            &format!("{dataset}/.table-dataset/meta/metadata.xml"),
+        ])
+        .current_dir(&root)
+        .output()?;
+    Ok(())
+}
+
+fn cmd_metadata_show(dataset: &str) -> Result<()> {
+    let root = find_repo_root()?;
+
+    // Try table dataset first, then file dataset
+    let paths = [
+        root.join(dataset).join(".table-dataset/meta/metadata.xml"),
+        root.join(dataset).join(".file-dataset/meta/metadata.xml"),
+    ];
+
+    for path in &paths {
+        if path.exists() {
+            let content = std::fs::read_to_string(path)?;
+            println!("{content}");
+            return Ok(());
+        }
+    }
+
+    bail!("no metadata found for dataset '{dataset}'");
+}
+
+// ─── License Commands ────────────────────────────────────────────────────────
+
+fn cmd_license_set(dataset: &str, file: &Path) -> Result<()> {
+    let root = find_repo_root()?;
+
+    // Determine which dataset type
+    let (meta_dir, ds_type) = if root.join(dataset).join(".table-dataset/meta").exists() {
+        (
+            root.join(dataset).join(".table-dataset/meta"),
+            ".table-dataset",
+        )
+    } else if root.join(dataset).join(".file-dataset/meta").exists() {
+        (
+            root.join(dataset).join(".file-dataset/meta"),
+            ".file-dataset",
+        )
+    } else {
+        bail!("dataset '{dataset}' not found");
+    };
+
+    let content = std::fs::read_to_string(file)
+        .with_context(|| format!("failed to read {}", file.display()))?;
+
+    // Determine filename based on content
+    let license_name = if content.trim_start().starts_with('<') {
+        "license.xml"
+    } else {
+        "license"
+    };
+
+    std::fs::write(meta_dir.join(license_name), &content)?;
+    println!("License set for dataset '{dataset}'");
+
+    std::process::Command::new("git")
+        .args(["add", &format!("{dataset}/{ds_type}/meta/{license_name}")])
+        .current_dir(&root)
+        .output()?;
+    Ok(())
+}
+
+fn cmd_license_show(dataset: &str) -> Result<()> {
+    let root = find_repo_root()?;
+
+    let candidates = [
+        root.join(dataset).join(".table-dataset/meta/license"),
+        root.join(dataset).join(".table-dataset/meta/license.xml"),
+        root.join(dataset).join(".file-dataset/meta/license"),
+        root.join(dataset).join(".file-dataset/meta/license.xml"),
+    ];
+
+    for path in &candidates {
+        if path.exists() {
+            let content = std::fs::read_to_string(path)?;
+            println!("{content}");
+            return Ok(());
+        }
+    }
+
+    bail!("no license found for dataset '{dataset}'");
 }
