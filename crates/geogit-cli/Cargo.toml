@@ -7,7 +7,7 @@ rust-version.workspace = true
 description = "Distributed version control for geospatial data"
 
 [[bin]]
-name = "geogit"
+name = "ggt"
 path = "src/main.rs"
 
 [dependencies]

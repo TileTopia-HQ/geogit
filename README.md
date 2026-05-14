@@ -8,34 +8,34 @@ GeoGit brings Git-like branching, diffing, merging, and collaboration to geodata
 
 ```bash
 # Initialize a repo and import a GeoPackage
-geogit init myproject --import GPKG:parcels.gpkg
+ggt init myproject --import GPKG:parcels.gpkg
 cd myproject
 
 # Check status
-geogit status
+ggt status
 
 # Commit
-geogit commit -m "Initial import"
+ggt commit -m "Initial import"
 
 # Branch and edit
-geogit branch feature/update-parcels
-geogit switch feature/update-parcels
+ggt branch feature/update-parcels
+ggt switch feature/update-parcels
 # ... edit the working copy GeoPackage in QGIS ...
-geogit commit -m "Update parcel boundaries"
+ggt commit -m "Update parcel boundaries"
 
 # Merge
-geogit switch main
-geogit merge feature/update-parcels
+ggt switch main
+ggt merge feature/update-parcels
 
 # Inspect data
-geogit data ls
-geogit data info parcels
-geogit data schema parcels
+ggt data ls
+ggt data info parcels
+ggt data schema parcels
 
 # Export
-geogit export parcels output.gpkg
-geogit export parcels output.geojson
-geogit export parcels output.csv
+ggt export parcels output.gpkg
+ggt export parcels output.geojson
+ggt export parcels output.csv
 ```
 
 ## File & Document Version Control
@@ -44,19 +44,19 @@ Version arbitrary files alongside geospatial datasets:
 
 ```bash
 # Add files to a file dataset
-geogit files add report.pdf spec.docx
+ggt files add report.pdf spec.docx
 
 # Add to a custom dataset
-geogit files add --dataset documents report.pdf
+ggt files add --dataset documents report.pdf
 
 # List tracked files
-geogit files ls
+ggt files ls
 
 # Remove a file
-geogit files rm report.pdf
+ggt files rm report.pdf
 
 # Commit as usual
-geogit commit -m "Add project documents"
+ggt commit -m "Add project documents"
 ```
 
 ## Dataset Metadata & Licensing
@@ -65,15 +65,15 @@ Attach ISO 19115 XML metadata and license information to any dataset:
 
 ```bash
 # Set XML metadata (ISO 19115, FGDC, or any XML)
-geogit metadata set parcels metadata.xml
-geogit metadata show parcels
+ggt metadata set parcels metadata.xml
+ggt metadata show parcels
 
 # Set license (text or XML)
-geogit license set parcels LICENSE.txt
-geogit license show parcels
+ggt license set parcels LICENSE.txt
+ggt license show parcels
 
 # Works with both table and file datasets
-geogit metadata set documents meta.xml
+ggt metadata set documents meta.xml
 ```
 
 ## How It Works
@@ -135,38 +135,38 @@ myproject/
 
 | Command | Description |
 |---------|-------------|
-| `geogit init [dir]` | Initialize a new repository |
-| `geogit clone <url>` | Clone a remote repository |
-| `geogit import GPKG:file.gpkg` | Import a GeoPackage dataset |
-| `geogit status` | Show working copy changes |
-| `geogit diff [base] [target]` | Feature-level diffs |
-| `geogit commit -m "msg"` | Commit changes |
-| `geogit log [--oneline] [-n N]` | Show commit history |
-| `geogit show [commit]` | Display commit details |
-| `geogit branch [name] [-d]` | List/create/delete branches |
-| `geogit switch <branch> [-c]` | Switch branches |
-| `geogit merge <branch>` | Merge a branch |
-| `geogit push [remote] [branch]` | Push to a remote |
-| `geogit pull [remote] [branch]` | Pull from a remote |
-| `geogit remote add\|remove\|ls` | Manage remotes |
-| `geogit reset [target]` | Reset to a commit |
-| `geogit restore <datasets>` | Restore datasets from a commit |
-| `geogit checkout [datasets]` | Checkout tree to working copy |
-| `geogit export <ds> <path>` | Export to GPKG/GeoJSON/CSV |
-| `geogit data ls\|info\|schema` | Inspect datasets |
-| `geogit files add\|ls\|rm` | Manage versioned files |
-| `geogit metadata set\|show` | Dataset XML metadata |
-| `geogit license set\|show` | Dataset license management |
-| `geogit pointcloud import\|ls\|info` | Point cloud datasets (LAS/LAZ) |
-| `geogit raster import\|ls\|info` | Raster datasets (GeoTIFF) |
-| `geogit conflicts [ls\|abort]` | View/manage merge conflicts |
-| `geogit resolve [paths]` | Resolve conflicts |
+| `ggt init [dir]` | Initialize a new repository |
+| `ggt clone <url>` | Clone a remote repository |
+| `ggt import GPKG:file.gpkg` | Import a GeoPackage dataset |
+| `ggt status` | Show working copy changes |
+| `ggt diff [base] [target]` | Feature-level diffs |
+| `ggt commit -m "msg"` | Commit changes |
+| `ggt log [--oneline] [-n N]` | Show commit history |
+| `ggt show [commit]` | Display commit details |
+| `ggt branch [name] [-d]` | List/create/delete branches |
+| `ggt switch <branch> [-c]` | Switch branches |
+| `ggt merge <branch>` | Merge a branch |
+| `ggt push [remote] [branch]` | Push to a remote |
+| `ggt pull [remote] [branch]` | Pull from a remote |
+| `ggt remote add\|remove\|ls` | Manage remotes |
+| `ggt reset [target]` | Reset to a commit |
+| `ggt restore <datasets>` | Restore datasets from a commit |
+| `ggt checkout [datasets]` | Checkout tree to working copy |
+| `ggt export <ds> <path>` | Export to GPKG/GeoJSON/CSV |
+| `ggt data ls\|info\|schema` | Inspect datasets |
+| `ggt files add\|ls\|rm` | Manage versioned files |
+| `ggt metadata set\|show` | Dataset XML metadata |
+| `ggt license set\|show` | Dataset license management |
+| `ggt pointcloud import\|ls\|info` | Point cloud datasets (LAS/LAZ) |
+| `ggt raster import\|ls\|info` | Raster datasets (GeoTIFF) |
+| `ggt conflicts [ls\|abort]` | View/manage merge conflicts |
+| `ggt resolve [paths]` | Resolve conflicts |
 
 ## Building
 
 ```bash
 cargo build --release
-# Binary at target/release/geogit
+# Binary at target/release/ggt
 ```
 
 ## Architecture
@@ -179,7 +179,7 @@ Five Rust crates in a workspace:
 | `geogit-core` | Dataset model, diff engine, three-way merge |
 | `geogit-git` | Git object storage via shell git |
 | `geogit-wc` | Working copy adapters (GeoPackage, PostGIS) |
-| `geogit` (CLI) | Command-line interface via [clap](https://github.com/clap-rs/clap) |
+| `geogit` (CLI) | Command-line interface (`ggt`) via [clap](https://github.com/clap-rs/clap) |
 
 ## License
 

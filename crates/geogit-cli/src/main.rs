@@ -20,7 +20,7 @@ type FeatureRow = (Vec<ColumnValue>, HashMap<String, ColumnValue>);
 
 #[derive(Parser)]
 #[command(
-    name = "geogit",
+    name = "ggt",
     version,
     about = "Distributed version control for geospatial data",
     long_about = "GeoGit provides Git-like version control for geospatial and tabular datasets.\n\
