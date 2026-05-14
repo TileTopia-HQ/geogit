@@ -1145,9 +1145,8 @@ fn import_shapefile(shp_path: &Path, dataset_name: Option<&str>) -> Result<()> {
 
     let mut features = Vec::new();
     let mut wc_features = Vec::new();
-    let mut fid: i64 = 1;
 
-    for result in reader.iter_shapes_and_records() {
+    for (fid, result) in (1_i64..).zip(reader.iter_shapes_and_records()) {
         let (_shape, record) = result.context("reading shapefile record")?;
         let mut values = HashMap::new();
 
@@ -1186,7 +1185,6 @@ fn import_shapefile(shp_path: &Path, dataset_name: Option<&str>) -> Result<()> {
         };
         features.push((pk.clone(), stored));
         wc_features.push((pk, values));
-        fid += 1;
     }
 
     let builder = TreeBuilder::new(&repo);

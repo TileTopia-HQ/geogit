@@ -15,7 +15,7 @@ impl Repository {
         std::fs::create_dir_all(path).context("failed to create repository directory")?;
 
         let output = Command::new("git")
-            .args(["init"])
+            .args(["init", "--template="])
             .current_dir(path)
             .output()
             .context("failed to run git init")?;
