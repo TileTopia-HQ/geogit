@@ -71,6 +71,21 @@ impl Legend {
         }
         row
     }
+
+    /// Get column names in legend order, using the current schema for name lookups.
+    pub fn column_names(&self, schema: &crate::schema::Schema) -> Vec<String> {
+        self.column_ids
+            .iter()
+            .map(|id| {
+                schema
+                    .0
+                    .iter()
+                    .find(|c| c.id == *id)
+                    .map(|c| c.name.clone())
+                    .unwrap_or_else(|| id.to_string())
+            })
+            .collect()
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
