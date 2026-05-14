@@ -12,7 +12,7 @@ fn geogit_bin() -> PathBuf {
     let mut path = std::env::current_exe().unwrap();
     path.pop(); // strip test binary name
     path.pop(); // strip deps/
-    path.push("geogit");
+    path.push("ggt");
     path
 }
 
