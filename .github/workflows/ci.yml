@@ -12,51 +12,53 @@ env:
 
 jobs:
   check:
-    name: Check & Clippy (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-14]
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - name: Bootstrap Rust (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          rustup-init -y --default-toolchain stable --component clippy
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        if: runner.os != 'macOS'
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
-      - run: cargo check --all-targets
-        shell: bash
-      - run: cargo clippy --all-targets -- -D warnings
-        shell: bash
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Test
+        run: cargo test --all
 
-  fmt:
-    name: Format
+  deny:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: EmbarkStudios/cargo-deny-action@v2
         with:
-          components: rustfmt
-      - run: cargo fmt --all -- --check
+          command: check licenses sources bans
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check advisories
+          arguments: --show-stats
+        continue-on-error: true
 
-  test:
-    name: Tests (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-14]
+  coverage:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Bootstrap Rust (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          rustup-init -y --default-toolchain stable
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        if: runner.os != 'macOS'
-      - run: cargo test --workspace
-        shell: bash
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Generate coverage
+        run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: lcov.info
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
