@@ -27,7 +27,7 @@ base64 = "0.22"
 uuid = { version = "1", features = ["v4", "serde"] }
 
 # GeoPackage / SQLite
-rusqlite = { version = "0.34", features = ["bundled", "blob", "functions"] }
+rusqlite = { version = "0.40", features = ["bundled", "blob", "functions"] }
 
 # Geometry
 geo = "0.29"
