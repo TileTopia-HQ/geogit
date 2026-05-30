@@ -57,7 +57,7 @@ clap = { version = "4", features = ["derive"] }
 rayon = "1"
 
 # Progress
-indicatif = "0.17"
+indicatif = "0.18"
 
 # Errors
 anyhow = "1"
