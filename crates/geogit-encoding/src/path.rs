@@ -45,7 +45,7 @@ const B64_ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrst
 impl PathStructure {
     /// Generate the full path for a feature given its primary key values.
     ///
-    /// Returns e.g. "A/A/A/B/kU0=" for PK [77] with default int scheme.
+    /// Returns e.g. "A/A/A/B/kU0=" for PK `[77]` with default int scheme.
     pub fn feature_path(&self, pk_values: &[ColumnValue]) -> String {
         let filename = self.pk_filename(pk_values);
         let dir = self.pk_directory(pk_values);
